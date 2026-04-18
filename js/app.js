@@ -893,9 +893,36 @@
   }
 
   // -------------------------------------------------------
+  // 설정 페이지 "전체 초기화" 버튼
+  // -------------------------------------------------------
+  function bindResetBtn() {
+    var btn = document.getElementById('btn-reset-all');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      if (confirm('모든 데이터(공사명/작업원/히스토리)를 삭제합니다. 계속?')) {
+        performFullReset();
+      }
+    });
+  }
+
+  // -------------------------------------------------------
+  // 전체 초기화 헬퍼
+  // -------------------------------------------------------
+  function performFullReset() {
+    localStorage.clear();
+    location.replace('./');
+  }
+
+  // -------------------------------------------------------
   // DOM 준비 후 실행
   // -------------------------------------------------------
   function setup() {
+    // URL ?reset=1 체크 — Settings.init / Router.init 이전에 먼저 처리
+    if (new URLSearchParams(location.search).get('reset') === '1') {
+      performFullReset();
+      return;
+    }
+
     Router.register('#/', function () {
       document.getElementById('page-main').style.display = 'block';
       document.getElementById('page-settings').style.display = 'none';
@@ -918,6 +945,7 @@
     });
 
     Settings.init();
+    bindResetBtn();
     Router.init();
   }
 

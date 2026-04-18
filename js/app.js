@@ -1,23 +1,41 @@
 /*
- * app.js — 공통필드 폼, 사진 3섹션, 합성 미리보기, 밴드 공유, 히스토리/조 관리
+ * app.js — Phase B: 공통필드 개편
+ *   - B-1: 공사명 <select>
+ *   - B-2: 사업소 고정
+ *   - B-3: 작업장소 GPS + 지도 모달
+ *   - B-4: 작업원 칩 UI
+ *   - B-5: "기존과 동일" 자동 감지
+ *   - B-6: 날짜/내용 자동 (v1 유지)
+ *
+ * compose.js 수정 금지 (Phase C)
+ * Web Share API 호출부 유지 (Phase D)
+ * capture 속성 추가 금지 (Phase C)
  */
 
 (function () {
-  var OFFICES = [
-    '광진성동지사',
-    '동대문중랑지사',
-    '서대문은평지사',
-    '서울본부직할',
-    '강북성북지사',
-    '마포용산지사',
-    '노원도봉지사'
-  ];
-
   var AM_HOUR_BOUNDARY = 12;
 
+  // Phase C에서 접근할 선택된 작업원 접근자 — 외부 참조 가능
+  // getSelectedWorkers() → string[]
+  var _selectedWorkers = [];
+
+  /** 현재 선택된 작업원 배열 반환 (합성 등 외부 참조용) */
+  function getSelectedWorkers() {
+    return _selectedWorkers.slice();
+  }
+
+  // 지도 모달 내부 상태
+  var _mapState = {
+    map: null,
+    marker: null,
+    pendingCoord: null,   // { lat, lng }
+    pendingAddress: null
+  };
+
+  // 사진 상태 (Phase C까지 유지)
   var photoState = {
-    workers: { file: null, blobUrl: null, tags: [] },
-    documents: { file: null, blobUrl: null, tags: [] },
+    workers: { file: null, blobUrl: null },
+    documents: { file: null, blobUrl: null },
     vehicles: []
   };
 
@@ -28,64 +46,90 @@
   // 초기화
   // -------------------------------------------------------
   function init() {
-    buildOfficeOptions();
-    loadCommonFields();
+    buildProjectSelect();
+    initOffice();
+    loadWorkplace();
     autoFillDate();
     autoFillContent();
+    buildWorkerChips();
+    refreshWorkerDatalist();
     bindFormEvents();
+    bindMatchBanner();
     bindPhotoEvents();
     bindComposeBtn();
     bindShareBtn();
     bindCrewUI();
     bindSessionCopyBtns();
     bindSettingsBtn();
+    bindMapModal();
     refreshCrewSelect();
     refreshSessionCopyBtnState();
+    // 초기 매치 감지
+    triggerMatchCheck();
   }
 
   // -------------------------------------------------------
-  // 사업소 드롭다운
+  // B-1: 공사명 <select>
   // -------------------------------------------------------
-  function buildOfficeOptions() {
-    var sel = document.getElementById('field-office');
-    OFFICES.forEach(function (name) {
+  function buildProjectSelect() {
+    var sel = document.getElementById('project-name');
+    var state = Storage.getState();
+    var names = state.projectNames || [];
+
+    sel.innerHTML = '';
+
+    if (names.length === 0) {
+      // 가드: projectNames 비어있으면 안내 옵션
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '-- 공사명 없음 (설정에서 추가하세요) --';
+      sel.appendChild(opt);
+      var hint = document.createElement('p');
+      hint.className = 'warn';
+      hint.style.fontSize = '13px';
+      hint.style.marginTop = '4px';
+      hint.textContent = '설정 페이지에서 공사명을 먼저 등록해주세요.';
+      sel.parentNode.appendChild(hint);
+      return;
+    }
+
+    names.forEach(function (name) {
       var opt = document.createElement('option');
       opt.value = name;
       opt.textContent = name;
       sel.appendChild(opt);
     });
+
+    // 기본값 = lastSelected.projectName (없으면 첫 번째)
+    var last = state.lastSelected && state.lastSelected.projectName;
+    if (last && names.indexOf(last) !== -1) {
+      sel.value = last;
+    } else {
+      sel.value = names[0];
+      Storage.setLastSelected({ projectName: names[0] });
+    }
   }
 
   // -------------------------------------------------------
-  // localStorage 복원
+  // B-2: 사업소 고정
   // -------------------------------------------------------
-  function loadCommonFields() {
-    var fields = Storage.getCommonFields();
-    if (fields.projectName) {
-      document.getElementById('field-project').value = fields.projectName;
-    }
-    if (fields.lastOffice) {
-      document.getElementById('field-office').value = fields.lastOffice;
-    }
-    if (fields.workplace) {
-      document.getElementById('field-workplace').value = fields.workplace;
-    }
-    refreshWorkerDatalist();
-  }
-
-  function refreshWorkerDatalist() {
-    var history = Storage.getWorkerHistory();
-    var dl = document.getElementById('worker-datalist');
-    dl.innerHTML = '';
-    history.forEach(function (name) {
-      var opt = document.createElement('option');
-      opt.value = name;
-      dl.appendChild(opt);
-    });
+  function initOffice() {
+    Storage.setLastSelected({ office: '마포용산지사' });
   }
 
   // -------------------------------------------------------
-  // 날짜 자동 채움
+  // 작업장소 복원
+  // -------------------------------------------------------
+  function loadWorkplace() {
+    var state = Storage.getState();
+    var ls = state.lastSelected || {};
+    if (ls.workplace) {
+      document.getElementById('workplace').value = ls.workplace;
+    }
+  }
+
+  // -------------------------------------------------------
+  // B-6: 날짜 자동 채움
   // -------------------------------------------------------
   function autoFillDate() {
     var today = new Date();
@@ -96,7 +140,7 @@
   }
 
   // -------------------------------------------------------
-  // 내용 자동 채움 (시간대 기반)
+  // B-6: 내용 자동 채움 (시간대 기반)
   // -------------------------------------------------------
   function autoFillContent() {
     var hour = new Date().getHours();
@@ -108,35 +152,83 @@
   }
 
   // -------------------------------------------------------
+  // B-4: 작업원 칩 렌더
+  // -------------------------------------------------------
+  function buildWorkerChips() {
+    var container = document.getElementById('worker-chips');
+    container.innerHTML = '';
+
+    var state = Storage.getState();
+    var workers = state.workers || [];
+    var lastWorkers = (state.lastSelected && state.lastSelected.workers) || [];
+
+    if (workers.length === 0) {
+      container.innerHTML = '<span class="empty-hint">등록된 작업원이 없습니다.</span>';
+      _selectedWorkers = [];
+      return;
+    }
+
+    workers.forEach(function (name) {
+      var label = document.createElement('label');
+      label.className = 'worker-chip';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = name;
+      cb.checked = lastWorkers.indexOf(name) !== -1;
+
+      cb.addEventListener('change', onWorkerChipChange);
+
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(name));
+      container.appendChild(label);
+    });
+
+    // 초기 _selectedWorkers 동기화
+    _selectedWorkers = getCheckedWorkers();
+  }
+
+  function getCheckedWorkers() {
+    var checkboxes = document.querySelectorAll('#worker-chips input[type="checkbox"]');
+    var result = [];
+    checkboxes.forEach(function (cb) {
+      if (cb.checked) result.push(cb.value);
+    });
+    return result;
+  }
+
+  function onWorkerChipChange() {
+    _selectedWorkers = getCheckedWorkers();
+    Storage.setLastSelected({ workers: _selectedWorkers.slice() });
+    triggerMatchCheck();
+  }
+
+  // -------------------------------------------------------
   // 폼 이벤트 바인딩
   // -------------------------------------------------------
   function bindFormEvents() {
-    var projectEl = document.getElementById('field-project');
-    var officeEl = document.getElementById('field-office');
-    var workplaceEl = document.getElementById('field-workplace');
+    var projectSel = document.getElementById('project-name');
+    var workplaceEl = document.getElementById('workplace');
     var gpsBtn = document.getElementById('btn-gps');
 
-    projectEl.addEventListener('input', function () {
-      Storage.saveCommonFields({ projectName: this.value });
-    });
-
-    officeEl.addEventListener('change', function () {
-      Storage.saveLastOffice(this.value);
+    projectSel.addEventListener('change', function () {
+      Storage.setLastSelected({ projectName: this.value });
+      triggerMatchCheck();
     });
 
     workplaceEl.addEventListener('input', function () {
-      Storage.saveWorkplace(this.value);
+      Storage.setLastSelected({ workplace: this.value });
     });
 
     gpsBtn.addEventListener('click', requestGPS);
   }
 
   // -------------------------------------------------------
-  // GPS 역지오코딩
+  // B-3: GPS 역지오코딩 (v1 재사용, 함수명 유지)
   // -------------------------------------------------------
   function requestGPS() {
     var btn = document.getElementById('btn-gps');
-    var workplaceEl = document.getElementById('field-workplace');
+    var workplaceEl = document.getElementById('workplace');
     var statusEl = document.getElementById('gps-status');
 
     if (!navigator.geolocation) {
@@ -156,7 +248,7 @@
         reverseGeocode(lat, lng, function (address) {
           if (address) {
             workplaceEl.value = address;
-            Storage.saveWorkplace(address);
+            Storage.setLastSelected({ workplace: address });
           } else {
             statusEl.textContent = 'GPS 주소 변환 실패. 수동 입력하세요.';
           }
@@ -192,28 +284,237 @@
   }
 
   // -------------------------------------------------------
-  // 작업원 입력 → blur 시 히스토리 저장
+  // B-3: 지도 모달
   // -------------------------------------------------------
-  function bindTagBlurSave(inputEl, isMulti) {
-    inputEl.addEventListener('blur', function () {
-      if (isMulti) {
-        parseTags(this.value).forEach(function (name) {
-          Storage.addWorkerIfNew(name);
-        });
-      } else {
-        Storage.addWorkerIfNew(this.value.trim());
-      }
-      refreshWorkerDatalist();
+  function bindMapModal() {
+    document.getElementById('btn-open-map').addEventListener('click', openMapModal);
+    document.getElementById('btn-map-cancel').addEventListener('click', closeMapModal);
+    document.getElementById('btn-map-confirm').addEventListener('click', confirmMapSelection);
+
+    // 배경 클릭으로 닫기
+    document.getElementById('map-modal-backdrop').addEventListener('click', function (e) {
+      if (e.target === this) closeMapModal();
+    });
+  }
+
+  function openMapModal() {
+    if (_mapState.marker) {
+      _mapState.marker.setMap(null);
+      _mapState.marker = null;
+    }
+    document.getElementById('map-modal-backdrop').style.display = 'flex';
+
+    // 카카오 SDK 로드 후 지도 초기화
+    if (typeof kakao === 'undefined' || !kakao.maps) {
+      document.getElementById('map-modal-address').textContent = '카카오 지도 SDK를 불러오는 중...';
+      return;
+    }
+
+    kakao.maps.load(function () {
+      initMapIfNeeded();
+    });
+  }
+
+  function initMapIfNeeded() {
+    if (_mapState.map) {
+      // 이미 생성된 경우 재사용 (리사이즈 반영)
+      kakao.maps.event.trigger(_mapState.map, 'resize');
+      return;
+    }
+
+    var container = document.getElementById('map-modal-map');
+
+    // 기본 중심: 서울 시청
+    var defaultCenter = new kakao.maps.LatLng(37.5665, 126.9780);
+
+    _mapState.map = new kakao.maps.Map(container, {
+      center: defaultCenter,
+      level: 4
+    });
+
+    // GPS 현재 좌표로 중심 이동 (실패 시 서울 시청 유지)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        var center = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        _mapState.map.setCenter(center);
+      }, function () { /* 실패 시 서울 시청 기본값 유지 */ }, { timeout: 5000 });
+    }
+
+    // 롱프레스: touchstart + setTimeout(500) + touchmove/touchend 취소
+    bindLongPress(container);
+  }
+
+  function bindLongPress(container) {
+    var timer = null;
+    var moved = false;
+
+    function onPressStart(e) {
+      moved = false;
+      timer = setTimeout(function () {
+        if (!moved) {
+          var coord = getCoordFromEvent(e);
+          if (coord) dropPin(coord.lat, coord.lng);
+        }
+      }, 500);
+    }
+
+    function onPressMove() {
+      moved = true;
+      clearTimeout(timer);
+    }
+
+    function onPressEnd() {
+      clearTimeout(timer);
+    }
+
+    // 터치 (모바일)
+    container.addEventListener('touchstart', onPressStart, { passive: true });
+    container.addEventListener('touchmove', onPressMove, { passive: true });
+    container.addEventListener('touchend', onPressEnd);
+
+    // 마우스 (데스크톱 테스트)
+    container.addEventListener('mousedown', onPressStart);
+    container.addEventListener('mousemove', onPressMove);
+    container.addEventListener('mouseup', onPressEnd);
+    container.addEventListener('mouseleave', onPressEnd);
+  }
+
+  function getCoordFromEvent(e) {
+    if (!_mapState.map) return null;
+    var mapEl = document.getElementById('map-modal-map');
+    var rect = mapEl.getBoundingClientRect();
+
+    var clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
+    var x = clientX - rect.left;
+    var y = clientY - rect.top;
+
+    var proj = _mapState.map.getProjection();
+    var point = new kakao.maps.Point(x, y);
+    var latLng = proj.coordsFromContainerPoint(point);
+    return { lat: latLng.getLat(), lng: latLng.getLng() };
+  }
+
+  function dropPin(lat, lng) {
+    var position = new kakao.maps.LatLng(lat, lng);
+
+    if (_mapState.marker) {
+      _mapState.marker.setPosition(position);
+    } else {
+      _mapState.marker = new kakao.maps.Marker({ position: position, map: _mapState.map });
+    }
+
+    _mapState.pendingCoord = { lat: lat, lng: lng };
+    _mapState.pendingAddress = null;
+
+    var addrEl = document.getElementById('map-modal-address');
+    addrEl.textContent = '주소 변환 중...';
+    document.getElementById('btn-map-confirm').disabled = true;
+
+    reverseGeocode(lat, lng, function (address) {
+      _mapState.pendingAddress = address;
+      addrEl.textContent = address || '주소를 찾을 수 없습니다. (좌표만 저장)';
+      document.getElementById('btn-map-confirm').disabled = false;
+    });
+  }
+
+  function confirmMapSelection() {
+    if (!_mapState.pendingCoord) return;
+
+    var address = _mapState.pendingAddress || '';
+    document.getElementById('workplace').value = address;
+    Storage.setLastSelected({
+      workplace: address,
+      workplaceCoord: _mapState.pendingCoord
+    });
+
+    closeMapModal();
+  }
+
+  function closeMapModal() {
+    document.getElementById('map-modal-backdrop').style.display = 'none';
+    _mapState.pendingCoord = null;
+    _mapState.pendingAddress = null;
+    // 마커는 유지 (다음 오픈 시 이전 핀 참고용)
+    document.getElementById('btn-map-confirm').disabled = true;
+    document.getElementById('map-modal-address').textContent = '핀 위치 주소가 여기 표시됩니다';
+  }
+
+  // -------------------------------------------------------
+  // B-5: "기존과 동일" 자동 감지
+  // -------------------------------------------------------
+  function triggerMatchCheck() {
+    var sel = document.getElementById('project-name');
+    var projectName = sel ? sel.value : '';
+    var workers = getCheckedWorkers().slice().sort();
+
+    var matched = Storage.findMatchingSession(projectName, workers);
+
+    var banner = document.getElementById('match-banner');
+    if (matched) {
+      // 프리필
+      document.getElementById('office').value = matched.office || '마포용산지사';
+      document.getElementById('workplace').value = matched.workplace || '';
+      Storage.setLastSelected({
+        office: matched.office || '마포용산지사',
+        workplace: matched.workplace || '',
+        workplaceCoord: matched.workplaceCoord || null
+      });
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  function bindMatchBanner() {
+    document.getElementById('btn-match-reset').addEventListener('click', function () {
+      document.getElementById('office').value = '마포용산지사';
+      document.getElementById('workplace').value = '';
+      Storage.setLastSelected({ workplace: '', workplaceCoord: null });
+      document.getElementById('match-banner').style.display = 'none';
     });
   }
 
   // -------------------------------------------------------
-  // 사진 섹션 바인딩
+  // 작업원 datalist 갱신 (하위 호환, Phase C까지)
+  // -------------------------------------------------------
+  function refreshWorkerDatalist() {
+    var history = Storage.getWorkerHistory();
+    var dl = document.getElementById('worker-datalist');
+    if (!dl) return;
+    dl.innerHTML = '';
+    history.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      dl.appendChild(opt);
+    });
+  }
+
+  // -------------------------------------------------------
+  // 합성에서 참조하는 공통 데이터 수집
+  // -------------------------------------------------------
+  function collectBoardData(workersStr) {
+    return {
+      projectName: (document.getElementById('project-name') || {}).value || '',
+      office: document.getElementById('office').value || '마포용산지사',
+      workplace: document.getElementById('workplace').value.trim(),
+      content: document.getElementById('field-content').value.trim(),
+      workers: workersStr,
+      workDate: document.getElementById('field-date').value.trim()
+    };
+  }
+
+  // -------------------------------------------------------
+  // 사진 섹션 바인딩 (Phase C에서 확장 예정)
   // -------------------------------------------------------
   function bindPhotoEvents() {
-    var tagsWorkers = document.getElementById('tags-workers');
-    var tagsDocuments = document.getElementById('tags-documents');
-
     document.getElementById('file-workers').addEventListener('change', function (e) {
       handleSinglePhoto(e.target.files[0], 'workers');
       e.target.value = '';
@@ -221,10 +522,6 @@
     document.getElementById('btn-delete-workers').addEventListener('click', function () {
       deleteSinglePhoto('workers');
     });
-    tagsWorkers.addEventListener('input', function () {
-      photoState.workers.tags = parseTags(this.value);
-    });
-    bindTagBlurSave(tagsWorkers, true);
 
     document.getElementById('file-documents').addEventListener('change', function (e) {
       handleSinglePhoto(e.target.files[0], 'documents');
@@ -233,22 +530,12 @@
     document.getElementById('btn-delete-documents').addEventListener('click', function () {
       deleteSinglePhoto('documents');
     });
-    tagsDocuments.addEventListener('input', function () {
-      photoState.documents.tags = parseTags(this.value);
-    });
-    bindTagBlurSave(tagsDocuments, true);
 
     document.getElementById('file-vehicles').addEventListener('change', function (e) {
       var files = Array.prototype.slice.call(e.target.files);
-      files.forEach(function (file) {
-        addVehiclePhoto(file);
-      });
+      files.forEach(function (file) { addVehiclePhoto(file); });
       e.target.value = '';
     });
-  }
-
-  function parseTags(str) {
-    return str.split(/[,\s]+/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
   function handleSinglePhoto(file, section) {
@@ -265,9 +552,6 @@
     if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
     state.file = null;
     state.blobUrl = null;
-    state.tags = [];
-    var tagsEl = document.getElementById('tags-' + section);
-    if (tagsEl) tagsEl.value = '';
     clearSinglePreview(section);
   }
 
@@ -315,10 +599,6 @@
     tagInput.addEventListener('input', function () {
       photoState.vehicles[idx].tag = this.value.trim();
     });
-    tagInput.addEventListener('blur', function () {
-      Storage.addWorkerIfNew(this.value.trim());
-      refreshWorkerDatalist();
-    });
 
     var delBtn = document.createElement('button');
     delBtn.textContent = '삭제';
@@ -350,24 +630,15 @@
     document.getElementById('btn-compose').addEventListener('click', runCompose);
   }
 
-  function collectBoardData(workers) {
-    return {
-      projectName: document.getElementById('field-project').value.trim(),
-      office: document.getElementById('field-office').value,
-      workplace: document.getElementById('field-workplace').value.trim(),
-      content: document.getElementById('field-content').value.trim(),
-      workers: workers,
-      workDate: document.getElementById('field-date').value.trim()
-    };
-  }
-
   function buildComposeTasks() {
     var tasks = [];
+    // 작업원 칩에서 선택된 이름 사용 (B-4 통일)
+    var workerStr = getSelectedWorkers().join(' ');
 
     if (photoState.workers.file) {
       tasks.push({
         file: photoState.workers.file,
-        boardData: collectBoardData(photoState.workers.tags.join(' ') || ''),
+        boardData: collectBoardData(workerStr),
         label: '작업자 사진',
         section: 'workers',
         index: 0
@@ -377,7 +648,7 @@
     if (photoState.documents.file) {
       tasks.push({
         file: photoState.documents.file,
-        boardData: collectBoardData(photoState.documents.tags.join(' ') || ''),
+        boardData: collectBoardData(workerStr),
         label: '서류 사진',
         section: 'documents',
         index: 0
@@ -399,7 +670,6 @@
     return tasks;
   }
 
-  // 작업일자 "YYYY.MM.DD" → "YYYYMMDD" (파일명용)
   function dateForFilename(dateStr) {
     return (dateStr || '').replace(/\./g, '');
   }
@@ -449,15 +719,6 @@
         resultArea.appendChild(wrap);
       });
 
-      var allWorkers = photoState.workers.tags.concat(photoState.documents.tags);
-      photoState.vehicles.forEach(function (v) {
-        if (v.tag) allWorkers.push(v.tag);
-      });
-      if (allWorkers.length > 0) {
-        Storage.addWorkers(allWorkers);
-        refreshWorkerDatalist();
-      }
-
       btn.disabled = false;
     }).catch(function (err) {
       resultArea.innerHTML = '<p class="warn">합성 오류: ' + err.message + '</p>';
@@ -466,7 +727,7 @@
   }
 
   // -------------------------------------------------------
-  // Phase 4: 밴드 공유
+  // 밴드 공유 (Phase D에서 교체 예정 — 현재 v1 유지)
   // -------------------------------------------------------
   function bindShareBtn() {
     document.getElementById('btn-share').addEventListener('click', runShare);
@@ -499,8 +760,7 @@
     var promises = tasks.map(function (t) {
       return Compose.compose(t.file, t.boardData).then(function (blob) {
         var filename = 'board_' + dateTag + '_' + t.section + '_' + t.index + '.jpg';
-        var file = new File([blob], filename, { type: 'image/jpeg', lastModified: Date.now() });
-        return file;
+        return new File([blob], filename, { type: 'image/jpeg', lastModified: Date.now() });
       });
     });
 
@@ -514,8 +774,8 @@
       );
 
       if (canFileShare) {
-        var office = document.getElementById('field-office').value;
-        var workplace = document.getElementById('field-workplace').value.trim();
+        var office = document.getElementById('office').value;
+        var workplace = document.getElementById('workplace').value.trim();
         var content = document.getElementById('field-content').value.trim();
 
         return navigator.share({
@@ -527,14 +787,10 @@
           btn.disabled = false;
         }).catch(function (err) {
           btn.disabled = false;
-          if (err.name === 'AbortError') {
-            // 사용자가 공유 취소 — 조용히 무시
-            return;
-          }
+          if (err.name === 'AbortError') return;
           alert('공유 중 오류가 발생했습니다: ' + err.message);
         });
       } else {
-        // 폴백: 다운로드 링크 제공
         btn.disabled = false;
         showShareFallback(files);
       }
@@ -576,25 +832,28 @@
   }
 
   function onShareSuccess() {
-    var sessionData = {
-      commonFields: {
-        office: document.getElementById('field-office').value,
-        workplace: document.getElementById('field-workplace').value.trim()
-      },
-      sections: {
-        workers: { tags: photoState.workers.tags.slice() },
-        documents: { tags: photoState.documents.tags.slice() },
-        vehicles: photoState.vehicles.map(function (v) {
-          return { tag: v.tag || '' };
-        })
-      }
-    };
-    Storage.recordSession(sessionData);
+    // sessionHistory 기록 (v2)
+    var projectName = document.getElementById('project-name').value || '';
+    var workers = getSelectedWorkers().slice().sort();
+    var office = document.getElementById('office').value || '마포용산지사';
+    var workplace = document.getElementById('workplace').value.trim();
+    var state = Storage.getState();
+    var coord = (state.lastSelected && state.lastSelected.workplaceCoord) || undefined;
+
+    Storage.appendSession({
+      projectName: projectName,
+      workers: workers,
+      office: office,
+      workplace: workplace,
+      workplaceCoord: coord,
+      timestamp: new Date().toISOString()
+    });
+
     refreshSessionCopyBtnState();
   }
 
   // -------------------------------------------------------
-  // Phase 5: 세션 복사 ("오전과 동일" / "어제와 동일")
+  // Phase 5: 세션 복사 (v1 호환 — CSS 숨김 상태, DOM 유지)
   // -------------------------------------------------------
   function bindSessionCopyBtns() {
     document.getElementById('btn-copy-morning').addEventListener('click', function () {
@@ -635,55 +894,35 @@
   }
 
   function applySession(session) {
-    // 사업소, 작업장소 복사
     if (session.commonFields) {
       if (session.commonFields.office) {
-        document.getElementById('field-office').value = session.commonFields.office;
-        Storage.saveLastOffice(session.commonFields.office);
+        document.getElementById('office').value = session.commonFields.office;
+        Storage.setLastSelected({ office: session.commonFields.office });
       }
       if (session.commonFields.workplace) {
-        document.getElementById('field-workplace').value = session.commonFields.workplace;
-        Storage.saveWorkplace(session.commonFields.workplace);
+        document.getElementById('workplace').value = session.commonFields.workplace;
+        Storage.setLastSelected({ workplace: session.commonFields.workplace });
       }
     }
-
-    // 작업자 태그 복사
-    if (session.sections) {
-      if (session.sections.workers) {
-        var wTags = session.sections.workers.tags || [];
-        photoState.workers.tags = wTags.slice();
-        document.getElementById('tags-workers').value = wTags.join(' ');
-      }
-      if (session.sections.documents) {
-        var dTags = session.sections.documents.tags || [];
-        photoState.documents.tags = dTags.slice();
-        document.getElementById('tags-documents').value = dTags.join(' ');
-      }
-      // 차대비 사진은 복사 불가 — 사진을 새로 선택한 뒤 이름을 직접 입력해야 함
-    }
-
-    alert('작업 정보를 복사했습니다. 사진은 다시 촬영해주세요.');
+    alert('작업 정보를 복사했습니다. 사진은 다시 선택해주세요.');
     refreshSessionCopyBtnState();
   }
 
   // -------------------------------------------------------
-  // Phase 5: 조 저장/불러오기
+  // Phase 5: 조 저장/불러오기 (v1 alias — CSS 숨김 상태, DOM 유지)
   // -------------------------------------------------------
   function bindCrewUI() {
     document.getElementById('btn-save-crew').addEventListener('click', function () {
-      var tags = photoState.workers.tags.slice();
-      if (tags.length === 0) {
-        alert('작업자 사진 섹션에 작업원을 먼저 입력해주세요.');
+      var workers = getSelectedWorkers();
+      if (workers.length === 0) {
+        alert('작업원을 먼저 선택해주세요.');
         return;
       }
       var name = prompt('저장할 조 이름을 입력하세요 (예: A조, 용산팀):');
       if (name === null) return;
-      name = name.trim();
-      if (!name) {
-        alert('조 이름을 입력해주세요.');
-        return;
-      }
-      var crew = Storage.saveCrew(name, tags);
+      name = (name || '').trim();
+      if (!name) { alert('조 이름을 입력해주세요.'); return; }
+      var crew = Storage.saveCrew(name, workers);
       if (crew) {
         refreshCrewSelect();
         renderCrewList();
@@ -694,27 +933,13 @@
     document.getElementById('btn-load-crew').addEventListener('click', function () {
       var sel = document.getElementById('select-crew');
       var id = sel.value;
-      if (!id) {
-        alert('불러올 조를 선택해주세요.');
-        return;
-      }
+      if (!id) { alert('불러올 조를 선택해주세요.'); return; }
       var crews = Storage.getSavedCrews();
       var crew = null;
       for (var i = 0; i < crews.length; i++) {
         if (crews[i].id === id) { crew = crews[i]; break; }
       }
-      if (!crew) {
-        alert('해당 조를 찾을 수 없습니다.');
-        return;
-      }
-
-      var members = crew.members;
-      // 작업자 + 서류 섹션 태그 덮어쓰기
-      photoState.workers.tags = members.slice();
-      photoState.documents.tags = members.slice();
-      document.getElementById('tags-workers').value = members.join(' ');
-      document.getElementById('tags-documents').value = members.join(' ');
-
+      if (!crew) { alert('해당 조를 찾을 수 없습니다.'); return; }
       alert('"' + crew.name + '"을(를) 불러왔습니다.');
     });
   }
@@ -727,7 +952,6 @@
     defaultOpt.value = '';
     defaultOpt.textContent = '-- 저장된 조 선택 --';
     sel.appendChild(defaultOpt);
-
     var crews = Storage.getSavedCrews();
     crews.forEach(function (crew) {
       var opt = document.createElement('option');
@@ -735,7 +959,6 @@
       opt.textContent = crew.name + ' (' + crew.members.join(', ') + ')';
       sel.appendChild(opt);
     });
-
     if (current) sel.value = current;
     renderCrewList();
   }
@@ -744,7 +967,6 @@
     var listEl = document.getElementById('crew-list');
     listEl.innerHTML = '';
     var crews = Storage.getSavedCrews();
-
     if (crews.length === 0) {
       var empty = document.createElement('p');
       empty.className = 'empty-hint';
@@ -752,19 +974,15 @@
       listEl.appendChild(empty);
       return;
     }
-
     crews.forEach(function (crew) {
       var row = document.createElement('div');
       row.className = 'crew-row';
-
       var nameSpan = document.createElement('span');
       nameSpan.className = 'crew-name';
       nameSpan.textContent = crew.name;
-
       var membersSpan = document.createElement('span');
       membersSpan.className = 'crew-members';
       membersSpan.textContent = crew.members.join(', ');
-
       var delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'btn-sm btn-danger';
@@ -778,7 +996,6 @@
           }
         });
       })(crew.id, crew.name);
-
       row.appendChild(nameSpan);
       row.appendChild(membersSpan);
       row.appendChild(delBtn);
@@ -802,18 +1019,19 @@
   // DOM 준비 후 실행
   // -------------------------------------------------------
   function setup() {
-    // 라우터에 메인/설정 핸들러 등록
     Router.register('#/', function () {
       document.getElementById('page-main').style.display = 'block';
       document.getElementById('page-settings').style.display = 'none';
-      // 첫 진입 시에만 init 실행 (이후 재진입은 상태 유지)
       if (!setup._mainInited) {
         setup._mainInited = true;
-        init(); // init 내부 loadCommonFields에서 refreshWorkerDatalist 호출
+        init();
         return;
       }
-      // 설정에서 작업원 추가 후 재진입 시 datalist 갱신
+      // 설정에서 재진입 시 칩/select 재렌더
+      buildWorkerChips();
+      buildProjectSelect();
       refreshWorkerDatalist();
+      triggerMatchCheck();
     });
 
     Router.register('#/settings', function () {
@@ -833,4 +1051,13 @@
   } else {
     setup();
   }
+
+  // -------------------------------------------------------
+  // 외부 노출 (Phase C에서 참조할 공개 함수)
+  // -------------------------------------------------------
+  window.AppMain = {
+    getSelectedWorkers: getSelectedWorkers,
+    collectBoardData: collectBoardData,
+    triggerMatchCheck: triggerMatchCheck
+  };
 })();

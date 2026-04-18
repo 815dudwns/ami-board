@@ -35,27 +35,36 @@
       <span class="session-hint" id="session-hint"></span>
     </div>
 
+    <!-- Phase B: "기존과 동일" 감지 배너 -->
+    <div class="match-banner" id="match-banner" style="display:none;">
+      이전 세션에서 자동입력됨
+      <button class="btn-sm btn-secondary" id="btn-match-reset" type="button">초기화</button>
+    </div>
+
     <!-- Phase 1: 공통필드 -->
     <div class="card" id="section-common">
       <h2>공통 정보</h2>
 
+      <!-- B-1: 공사명 select -->
       <div class="form-row">
-        <label for="field-project">공사명</label>
-        <input type="text" id="field-project" placeholder="예: 2025년AMI 보강공사(단가공사)">
+        <label for="project-name">공사명</label>
+        <select id="project-name"></select>
       </div>
 
+      <!-- B-2: 사업소 고정 (테스트 단계) -->
       <div class="form-row">
-        <label for="field-office">사업소</label>
-        <select id="field-office">
-          <option value="">-- 선택 --</option>
-        </select>
+        <label for="office">사업소 <span class="office-fixed-hint">(테스트 단계 고정값)</span></label>
+        <input type="text" id="office" value="마포용산지사" readonly disabled>
+        <!-- TODO: Phase B+ office auto-match by district -->
       </div>
 
+      <!-- B-3: 작업장소 + GPS + 지도 버튼 -->
       <div class="form-row">
-        <label for="field-workplace">작업장소</label>
+        <label for="workplace">작업장소</label>
         <div class="input-with-btn">
-          <input type="text" id="field-workplace" placeholder="주소 또는 GPS 버튼 사용">
-          <button class="btn-secondary" id="btn-gps" type="button">GPS</button>
+          <input type="text" id="workplace" placeholder="주소 또는 GPS / 지도에서 선택">
+          <button class="btn-secondary btn-sm" id="btn-gps" type="button">GPS</button>
+          <button class="btn-secondary btn-sm" id="btn-open-map" type="button">지도에서 선택</button>
         </div>
         <span class="gps-status" id="gps-status"></span>
       </div>
@@ -69,9 +78,31 @@
         <label for="field-date">작업일자</label>
         <input type="text" id="field-date" placeholder="YYYY.MM.DD">
       </div>
+
+      <!-- B-4: 작업원 칩 -->
+      <div class="form-row">
+        <label>작업원</label>
+        <div class="worker-chips" id="worker-chips"></div>
+      </div>
     </div>
 
-    <!-- datalist: 작업원 자동완성 -->
+    <!-- 지도 모달 (B-3) -->
+    <div class="modal-backdrop" id="map-modal-backdrop" style="display:none;" aria-modal="true" role="dialog">
+      <div class="modal map-modal" id="map-modal">
+        <div class="modal__header">
+          <span class="modal__title">지도에서 선택</span>
+          <p class="modal__hint">롱프레스(0.5초 누르기)로 핀을 꽂으세요</p>
+        </div>
+        <div class="map-modal__map" id="map-modal-map"></div>
+        <p class="map-modal__preview" id="map-modal-address">핀 위치 주소가 여기 표시됩니다</p>
+        <div class="modal__actions">
+          <button class="btn-secondary" id="btn-map-cancel" type="button">취소</button>
+          <button class="btn-primary" id="btn-map-confirm" type="button" disabled>확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- datalist: 작업원 자동완성 (하위 호환, Phase C까지 유지) -->
     <datalist id="worker-datalist"></datalist>
 
     <!-- Phase 2: 사진 3섹션 -->
@@ -84,14 +115,9 @@
         <div class="photo-controls">
           <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
             사진 선택
-            <input type="file" id="file-workers" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="file-workers" accept="image/*" style="display:none;">
           </label>
           <button class="btn-danger btn-sm" id="btn-delete-workers" style="display:none;" type="button">삭제</button>
-          <input type="text"
-            id="tags-workers"
-            class="tag-input"
-            placeholder="작업원 이름 (공백 구분, 예: 우영준 윤상윤)"
-            list="worker-datalist">
         </div>
         <div class="preview-wrap" id="preview-workers">
           <span class="empty-hint">사진 없음</span>
@@ -106,14 +132,9 @@
         <div class="photo-controls">
           <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
             사진 선택
-            <input type="file" id="file-documents" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="file-documents" accept="image/*" style="display:none;">
           </label>
           <button class="btn-danger btn-sm" id="btn-delete-documents" style="display:none;" type="button">삭제</button>
-          <input type="text"
-            id="tags-documents"
-            class="tag-input"
-            placeholder="작업원 이름 (공백 구분)"
-            list="worker-datalist">
         </div>
         <div class="preview-wrap" id="preview-documents">
           <span class="empty-hint">사진 없음</span>
@@ -128,7 +149,7 @@
         <div class="photo-controls">
           <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
             사진 추가
-            <input type="file" id="file-vehicles" accept="image/*" capture="environment" multiple style="display:none;">
+            <input type="file" id="file-vehicles" accept="image/*" multiple style="display:none;">
           </label>
         </div>
         <div id="vehicle-list"></div>

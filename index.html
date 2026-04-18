@@ -1,45 +1,174 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AMI Board</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 1rem;
-        }
-        .status {
-            color: #ff9800;
-            font-weight: bold;
-            font-size: 0.9rem;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>동산보드판</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+  <!--
+    카카오 Maps SDK: appkey는 ami-work 프로젝트에서 공유 (815dudwns.github.io 등록).
+    services 라이브러리 포함 (coord2Address 역지오코딩).
+    HTTPS(GitHub Pages) 환경에서 GPS + 역지오코딩 동작.
+    file:// 로컬 접근 시 GPS는 불가 → 수동 입력 사용.
+  -->
+  <script type="text/javascript"
+    src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=2eae4b699110525f0dc62295ed8ed43d&libraries=services&autoload=false">
+  </script>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>AMI Board</h1>
-        <p class="status">WIP - 개발 중</p>
+<div class="container">
+  <h1>동산보드판</h1>
+
+  <!-- Phase 5: 세션 복사 버튼 -->
+  <div class="session-copy-row">
+    <button class="btn-secondary btn-sm" id="btn-copy-morning" type="button" disabled>오전과 동일</button>
+    <button class="btn-secondary btn-sm" id="btn-copy-yesterday" type="button" disabled>어제와 동일</button>
+    <span class="session-hint" id="session-hint"></span>
+  </div>
+
+  <!-- Phase 1: 공통필드 -->
+  <div class="card" id="section-common">
+    <h2>공통 정보</h2>
+
+    <div class="form-row">
+      <label for="field-project">공사명</label>
+      <input type="text" id="field-project" placeholder="예: 2025년AMI 보강공사(단가공사)">
     </div>
+
+    <div class="form-row">
+      <label for="field-office">사업소</label>
+      <select id="field-office">
+        <option value="">-- 선택 --</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="field-workplace">작업장소</label>
+      <div class="input-with-btn">
+        <input type="text" id="field-workplace" placeholder="주소 또는 GPS 버튼 사용">
+        <button class="btn-secondary" id="btn-gps" type="button">GPS</button>
+      </div>
+      <span class="gps-status" id="gps-status"></span>
+    </div>
+
+    <div class="form-row">
+      <label for="field-content">내용</label>
+      <input type="text" id="field-content" placeholder="작업전 안전회의(오전)">
+    </div>
+
+    <div class="form-row">
+      <label for="field-date">작업일자</label>
+      <input type="text" id="field-date" placeholder="YYYY.MM.DD">
+    </div>
+  </div>
+
+  <!-- datalist: 작업원 자동완성 -->
+  <datalist id="worker-datalist"></datalist>
+
+  <!-- Phase 2: 사진 3섹션 -->
+  <div class="card" id="section-photos">
+    <h2>사진 업로드</h2>
+
+    <!-- 작업자 사진 -->
+    <div class="photo-section">
+      <h3>작업자 사진 (1장)</h3>
+      <div class="photo-controls">
+        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+          사진 선택
+          <input type="file" id="file-workers" accept="image/*" capture="environment" style="display:none;">
+        </label>
+        <button class="btn-danger btn-sm" id="btn-delete-workers" style="display:none;" type="button">삭제</button>
+        <input type="text"
+          id="tags-workers"
+          class="tag-input"
+          placeholder="작업원 이름 (공백 구분, 예: 우영준 윤상윤)"
+          list="worker-datalist">
+      </div>
+      <div class="preview-wrap" id="preview-workers">
+        <span class="empty-hint">사진 없음</span>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- 서류 사진 -->
+    <div class="photo-section">
+      <h3>서류 사진 (1장)</h3>
+      <div class="photo-controls">
+        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+          사진 선택
+          <input type="file" id="file-documents" accept="image/*" capture="environment" style="display:none;">
+        </label>
+        <button class="btn-danger btn-sm" id="btn-delete-documents" style="display:none;" type="button">삭제</button>
+        <input type="text"
+          id="tags-documents"
+          class="tag-input"
+          placeholder="작업원 이름 (공백 구분)"
+          list="worker-datalist">
+      </div>
+      <div class="preview-wrap" id="preview-documents">
+        <span class="empty-hint">사진 없음</span>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- 차대비 사진 -->
+    <div class="photo-section">
+      <h3>차대비 사진 (0장 이상, 개인별 1명)</h3>
+      <div class="photo-controls">
+        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+          사진 추가
+          <input type="file" id="file-vehicles" accept="image/*" capture="environment" multiple style="display:none;">
+        </label>
+      </div>
+      <div id="vehicle-list"></div>
+    </div>
+  </div>
+
+  <!-- Phase 5: 조 저장/불러오기 -->
+  <div class="card" id="section-crews">
+    <h2>조 관리</h2>
+    <div class="crew-actions">
+      <button class="btn-secondary btn-sm" id="btn-save-crew" type="button">현재 작업원 조 저장</button>
+      <select id="select-crew">
+        <option value="">-- 저장된 조 선택 --</option>
+      </select>
+      <button class="btn-secondary btn-sm" id="btn-load-crew" type="button">불러오기</button>
+    </div>
+    <div id="crew-list" class="crew-list"></div>
+  </div>
+
+  <!-- Phase 3: 합성 미리보기 -->
+  <div class="card" id="section-compose">
+    <h2>합성 미리보기</h2>
+    <button class="btn-primary" id="btn-compose" type="button">합성 미리보기</button>
+    <div class="compose-result-area" id="compose-result"></div>
+  </div>
+
+  <!-- Phase 4: 밴드 공유 -->
+  <div class="card" id="section-share">
+    <h2>밴드 공유</h2>
+    <button class="btn-primary btn-share" id="btn-share" type="button">밴드 공유</button>
+    <div id="share-status" class="share-status"></div>
+    <div id="share-fallback" class="share-fallback" style="display:none;">
+      <p class="warn">이 기기는 파일 공유를 지원하지 않습니다.<br>아래 이미지를 저장한 뒤 밴드 앱에서 직접 첨부해주세요.</p>
+      <div id="share-download-list"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/compose.js"></script>
+<script>
+  // 카카오 SDK가 있으면 비동기 로드 (GPS 역지오코딩용)
+  if (typeof kakao !== 'undefined' && kakao.maps) {
+    kakao.maps.load(function () {});
+  }
+</script>
+<script src="js/app.js"></script>
 </body>
 </html>

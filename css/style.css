@@ -1,0 +1,358 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  background: #f4f4f4;
+  color: #222;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: #1a1a1a;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: #333;
+  border-left: 4px solid #2563eb;
+  padding-left: 8px;
+}
+
+/* 카드 */
+.card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* 폼 행 */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.form-row:last-child {
+  margin-bottom: 0;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+}
+
+input[type="text"],
+input[type="date"],
+select,
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 15px;
+  font-family: inherit;
+  background: #fff;
+  transition: border-color 0.15s;
+}
+
+input[type="text"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* GPS 행 */
+.input-with-btn {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-btn input {
+  flex: 1;
+}
+
+.gps-status {
+  font-size: 12px;
+  color: #e05c00;
+  min-height: 16px;
+}
+
+/* 버튼 공통 */
+button {
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  transition: background 0.15s;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+.btn-primary:hover { background: #1d4ed8; }
+.btn-primary:disabled { background: #93b4f5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #333;
+}
+.btn-secondary:hover { background: #cbd5e1; }
+
+.btn-sm {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+.btn-danger:hover { background: #dc2626; }
+
+/* 사진 섹션 */
+.photo-section {
+  margin-bottom: 12px;
+}
+
+.photo-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.photo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.tag-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+/* 썸네일 */
+.thumb {
+  width: 100px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  display: block;
+}
+
+.preview-wrap {
+  min-height: 88px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.empty-hint {
+  color: #aaa;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+/* 차대비 목록 */
+.vehicle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.vehicle-item .tag-input {
+  flex: 1;
+  min-width: 100px;
+}
+
+/* 합성 결과 */
+.compose-result-area {
+  margin-top: 12px;
+}
+
+.preview-item {
+  margin-bottom: 16px;
+}
+
+.preview-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.preview-full {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  display: block;
+}
+
+.warn {
+  color: #e05c00;
+  font-size: 14px;
+}
+
+/* 구분선 */
+hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 16px 0;
+}
+
+/* Phase 5: 세션 복사 버튼 행 */
+.session-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.session-hint {
+  font-size: 12px;
+  color: #555;
+}
+
+/* Phase 5: 조 관리 */
+.crew-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.crew-actions select {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crew-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.crew-name {
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 60px;
+}
+
+.crew-members {
+  flex: 1;
+  font-size: 13px;
+  color: #555;
+  min-width: 80px;
+}
+
+/* Phase 4: 공유 */
+.btn-share {
+  min-width: 120px;
+}
+
+.share-status {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #555;
+  min-height: 20px;
+}
+
+.share-fallback {
+  margin-top: 12px;
+}
+
+.share-fallback .warn {
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+#share-download-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.download-link {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+}
+
+/* 작은 화면 대응 */
+@media (max-width: 480px) {
+  .container {
+    padding: 10px;
+  }
+  h1 { font-size: 17px; }
+  h2 { font-size: 15px; }
+  .thumb {
+    width: 80px;
+    height: 64px;
+  }
+  .crew-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .crew-actions select {
+    width: 100%;
+  }
+}

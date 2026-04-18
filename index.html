@@ -105,9 +105,38 @@
     <!-- datalist: 작업원 자동완성 (하위 호환, Phase C까지 유지) -->
     <datalist id="worker-datalist"></datalist>
 
+    <!-- Phase C: 자동 입히기 -->
+    <div class="card" id="section-autofill">
+      <h2>자동 입히기</h2>
+      <button class="btn-primary btn-autofill" id="btn-autofill" type="button">자동 입히기</button>
+
+      <!-- 프롬프트 배너 (자동 플로우 진행 중 표시) -->
+      <div class="autofill-prompt" id="autofill-prompt" style="display:none;">
+        <p class="autofill-prompt__text" id="autofill-prompt-text"></p>
+        <div class="autofill-prompt__actions">
+          <button class="btn-primary btn-sm" id="btn-autofill-pick" type="button">선택</button>
+          <button class="btn-secondary btn-sm" id="btn-autofill-skip" type="button">건너뛰기</button>
+        </div>
+      </div>
+
+      <!-- 자동 플로우 전용 hidden file input (보조 UI와 완전 분리) -->
+      <!-- capture 속성 없음 (photo_upload_policy.md) -->
+      <input type="file" id="auto-file-workers" accept="image/*" style="display:none;">
+      <input type="file" id="auto-file-documents" accept="image/*" style="display:none;">
+      <input type="file" id="auto-file-vehicle" accept="image/*" style="display:none;">
+
+      <!-- Phase C: 합성 미리보기 그리드 -->
+      <div class="preview-grid" id="preview-grid" style="display:none;">
+        <h3 class="preview-grid__title">합성 미리보기</h3>
+        <div class="preview-grid__items" id="preview-grid-items"></div>
+        <!-- TODO Phase D: save + band -->
+        <button class="btn-primary btn-save-band" id="btn-save-band" type="button" disabled>저장 + 밴드 열기</button>
+      </div>
+    </div>
+
     <!-- Phase 2: 사진 3섹션 -->
     <div class="card" id="section-photos">
-      <h2>사진 업로드</h2>
+      <h2>사진 업로드 (보조)</h2>
 
       <!-- 작업자 사진 -->
       <div class="photo-section">
@@ -237,5 +266,6 @@
 <script src="js/router.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/app.js"></script>
+<script src="js/autofill.js"></script>
 </body>
 </html>

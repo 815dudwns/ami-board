@@ -1,83 +1,122 @@
 /*
- * storage.js — localStorage 래퍼
+ * storage.js — localStorage 래퍼 (스키마 v2)
  *
- * 스키마 (key: "ami-board-state"):
+ * StateV2:
  * {
- *   commonFields: {
- *     projectName: string,
- *     lastOffice: string,
- *     workplace: string
+ *   version: 2,
+ *   projectNames: string[],
+ *   workers: string[],
+ *   lastSelected: {
+ *     projectName?: string,
+ *     workers?: string[],
+ *     office?: string,
+ *     workplace?: string,
+ *     workplaceCoord?: { lat: number, lng: number }
  *   },
- *   workerHistory: string[],
- *   savedCrews: Array<{
- *     id: string,
- *     name: string,
- *     members: string[],
- *     createdAt: string
- *   }>,
- *   recentSessions: {
- *     morning?: Session,
- *     afternoon?: Session,
- *     yesterday?: Session
- *   }
- * }
- *
- * Session: {
- *   timestamp: string,        // ISO
- *   date: string,             // "YYYY-MM-DD"
- *   commonFields: { office, workplace },
- *   sections: {
- *     workers: { tags: string[] },
- *     documents: { tags: string[] },
- *     vehicles: Array<{ tag: string }>
- *   }
+ *   sessionHistory: Array<{
+ *     projectName: string,
+ *     workers: string[],
+ *     office: string,
+ *     workplace: string,
+ *     workplaceCoord?: { lat: number, lng: number },
+ *     timestamp: string
+ *   }>
  * }
  */
 
 var Storage = (function () {
   var KEY = 'ami-board-state';
-  var MAX_CREWS = 20;
+  var SESSION_MAX = 30;
 
-  var DEFAULTS = {
-    commonFields: {
-      projectName: '',
-      lastOffice: '',
-      workplace: ''
-    },
-    workerHistory: [],
-    savedCrews: [],
-    recentSessions: {}
+  var DEFAULT_V2 = {
+    version: 2,
+    projectNames: [],
+    workers: [],
+    lastSelected: {},
+    sessionHistory: []
   };
 
+  // -------------------------------------------------------
+  // 마이그레이션 v1 → v2
+  // -------------------------------------------------------
+  function migrateV1(raw) {
+    var v2 = {
+      version: 2,
+      projectNames: [],
+      workers: [],
+      lastSelected: {},
+      sessionHistory: []
+    };
+
+    var cf = raw.commonFields || {};
+
+    var pName = (cf.projectName || '').trim();
+    if (pName) {
+      v2.projectNames = [pName];
+      v2.lastSelected.projectName = pName;
+    }
+
+    if (cf.lastOffice) v2.lastSelected.office = cf.lastOffice;
+    if (cf.workplace) v2.lastSelected.workplace = cf.workplace;
+
+    var history = raw.workerHistory || [];
+    var seen = {};
+    history.forEach(function (name) {
+      name = (name || '').trim();
+      if (name && !seen[name]) {
+        seen[name] = true;
+        v2.workers.push(name);
+      }
+    });
+
+    return v2;
+  }
+
+  // -------------------------------------------------------
+  // load / save
+  // -------------------------------------------------------
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
-      if (!raw) return JSON.parse(JSON.stringify(DEFAULTS));
+      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_V2));
+
       var parsed = JSON.parse(raw);
-      return merge(DEFAULTS, parsed);
+
+      if (!parsed || typeof parsed !== 'object') {
+        return JSON.parse(JSON.stringify(DEFAULT_V2));
+      }
+
+      if (parsed.version !== 2) {
+        var migrated = migrateV1(parsed);
+        _save(migrated);
+        return migrated;
+      }
+
+      var state = JSON.parse(JSON.stringify(DEFAULT_V2));
+      if (Array.isArray(parsed.projectNames)) state.projectNames = parsed.projectNames;
+      if (Array.isArray(parsed.workers)) state.workers = parsed.workers;
+      if (parsed.lastSelected && typeof parsed.lastSelected === 'object') {
+        state.lastSelected = parsed.lastSelected;
+      }
+      if (Array.isArray(parsed.sessionHistory)) state.sessionHistory = parsed.sessionHistory;
+      return state;
     } catch (e) {
-      return JSON.parse(JSON.stringify(DEFAULTS));
+      return JSON.parse(JSON.stringify(DEFAULT_V2));
     }
   }
 
-  function save(state) {
+  function _save(state) {
     var attempts = [
       function () { localStorage.setItem(KEY, JSON.stringify(state)); },
       function () {
-        state.recentSessions = {};
-        localStorage.setItem(KEY, JSON.stringify(state));
+        var s = JSON.parse(JSON.stringify(state));
+        s.sessionHistory = s.sessionHistory.slice(-10);
+        localStorage.setItem(KEY, JSON.stringify(s));
       },
       function () {
-        if (state.savedCrews && state.savedCrews.length > 10) {
-          state.savedCrews = state.savedCrews.slice(-10);
-        }
-        localStorage.setItem(KEY, JSON.stringify(state));
-      },
-      function () {
-        if (state.savedCrews && state.savedCrews.length > 5) {
-          state.savedCrews = state.savedCrews.slice(-5);
-        }
-        localStorage.setItem(KEY, JSON.stringify(state));
+        var s = JSON.parse(JSON.stringify(state));
+        s.sessionHistory = [];
+        localStorage.setItem(KEY, JSON.stringify(s));
       }
     ];
 
@@ -88,10 +127,11 @@ var Storage = (function () {
       } catch (e) {
         if (i === attempts.length - 1) {
           var minimal = {
-            commonFields: state.commonFields,
-            workerHistory: state.workerHistory.slice(0, 20),
-            savedCrews: [],
-            recentSessions: {}
+            version: 2,
+            projectNames: state.projectNames.slice(0, 5),
+            workers: state.workers.slice(0, 20),
+            lastSelected: state.lastSelected,
+            sessionHistory: []
           };
           try {
             localStorage.setItem(KEY, JSON.stringify(minimal));
@@ -104,21 +144,163 @@ var Storage = (function () {
     }
   }
 
-  function merge(defaults, obj) {
-    var result = JSON.parse(JSON.stringify(defaults));
-    if (!obj || typeof obj !== 'object') return result;
-    Object.keys(obj).forEach(function (k) {
-      if (k in result && obj[k] !== null && typeof obj[k] === typeof result[k]) {
-        if (typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
-          result[k] = merge(result[k], obj[k]);
-        } else {
-          result[k] = obj[k];
-        }
-      } else {
-        result[k] = obj[k];
-      }
+  // -------------------------------------------------------
+  // v2 API
+  // -------------------------------------------------------
+  function getState() {
+    return load();
+  }
+
+  function saveState(s) {
+    _save(s);
+  }
+
+  function addProjectName(name) {
+    name = (name || '').trim();
+    if (!name) return;
+    var state = load();
+    if (state.projectNames.indexOf(name) === -1) {
+      state.projectNames.push(name);
+      _save(state);
+    }
+  }
+
+  function removeProjectName(name) {
+    var state = load();
+    state.projectNames = state.projectNames.filter(function (n) { return n !== name; });
+    _save(state);
+  }
+
+  function addWorker(name) {
+    name = (name || '').trim();
+    if (!name) return;
+    var state = load();
+    if (state.workers.indexOf(name) === -1) {
+      state.workers.push(name);
+      _save(state);
+    }
+  }
+
+  function removeWorker(name) {
+    var state = load();
+    state.workers = state.workers.filter(function (n) { return n !== name; });
+    _save(state);
+  }
+
+  function moveWorker(name, direction) {
+    var state = load();
+    var idx = state.workers.indexOf(name);
+    if (idx === -1) return;
+    var newIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= state.workers.length) return;
+    var arr = state.workers.slice();
+    var tmp = arr[idx];
+    arr[idx] = arr[newIdx];
+    arr[newIdx] = tmp;
+    state.workers = arr;
+    _save(state);
+  }
+
+  function setLastSelected(partial) {
+    var state = load();
+    Object.keys(partial).forEach(function (k) {
+      state.lastSelected[k] = partial[k];
     });
-    return result;
+    _save(state);
+  }
+
+  function appendSession(entry) {
+    var state = load();
+    state.sessionHistory.push(entry);
+    if (state.sessionHistory.length > SESSION_MAX) {
+      state.sessionHistory = state.sessionHistory.slice(-SESSION_MAX);
+    }
+    _save(state);
+  }
+
+  function findMatchingSession(projectName, workers) {
+    var state = load();
+    var sortedWorkers = workers.slice().sort();
+    for (var i = state.sessionHistory.length - 1; i >= 0; i--) {
+      var entry = state.sessionHistory[i];
+      if (entry.projectName !== projectName) continue;
+      var entryWorkers = (entry.workers || []).slice().sort();
+      if (entryWorkers.length !== sortedWorkers.length) continue;
+      var match = true;
+      for (var j = 0; j < sortedWorkers.length; j++) {
+        if (entryWorkers[j] !== sortedWorkers[j]) { match = false; break; }
+      }
+      if (match) return entry;
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------
+  // v1 호환 alias (app.js가 Phase B 전까지 그대로 동작하도록)
+  // -------------------------------------------------------
+
+  function getCommonFields() {
+    var state = load();
+    var ls = state.lastSelected || {};
+    return {
+      projectName: ls.projectName || '',
+      lastOffice: ls.office || '',
+      workplace: ls.workplace || ''
+    };
+  }
+
+  function saveCommonFields(fields) {
+    var partial = {};
+    if (fields.projectName !== undefined) partial.projectName = fields.projectName;
+    if (fields.lastOffice !== undefined) partial.office = fields.lastOffice;
+    if (fields.workplace !== undefined) partial.workplace = fields.workplace;
+    if (Object.keys(partial).length) setLastSelected(partial);
+  }
+
+  function saveLastOffice(office) {
+    setLastSelected({ office: office });
+  }
+
+  function saveWorkplace(workplace) {
+    setLastSelected({ workplace: workplace });
+  }
+
+  function getWorkerHistory() {
+    return load().workers || [];
+  }
+
+  function addWorkers(names) {
+    names.forEach(function (name) {
+      addWorker(name);
+    });
+  }
+
+  function addWorkerIfNew(name) {
+    addWorker(name);
+  }
+
+  function getSavedCrews() {
+    return [];
+  }
+
+  function saveCrew() {
+    return null;
+  }
+
+  function deleteCrew() {}
+
+  function getRecentSessions() {
+    return {};
+  }
+
+  function recordSession() {}
+
+  function isTodaySession(session) {
+    return session && dateOf(session) === todayStr();
+  }
+
+  function dateOf(session) {
+    return session && session.date ? session.date : '';
   }
 
   function todayStr() {
@@ -129,155 +311,22 @@ var Storage = (function () {
     return y + '-' + m + '-' + day;
   }
 
-  function dateOf(session) {
-    return session && session.date ? session.date : '';
-  }
-
-  // --- commonFields ---
-
-  function getCommonFields() {
-    return load().commonFields;
-  }
-
-  function saveCommonFields(fields) {
-    var state = load();
-    state.commonFields = Object.assign(state.commonFields, fields);
-    save(state);
-  }
-
-  function saveLastOffice(office) {
-    var state = load();
-    state.commonFields.lastOffice = office;
-    save(state);
-  }
-
-  function saveWorkplace(workplace) {
-    var state = load();
-    state.commonFields.workplace = workplace;
-    save(state);
-  }
-
-  // --- workerHistory ---
-
-  function getWorkerHistory() {
-    return load().workerHistory || [];
-  }
-
-  function addWorkers(names) {
-    var state = load();
-    var history = state.workerHistory || [];
-    names.forEach(function (name) {
-      name = name.trim();
-      if (name && history.indexOf(name) === -1) {
-        history.push(name);
-      }
-    });
-    state.workerHistory = history;
-    save(state);
-  }
-
-  function addWorkerIfNew(name) {
-    name = (name || '').trim();
-    if (!name) return;
-    var state = load();
-    var history = state.workerHistory || [];
-    if (history.indexOf(name) === -1) {
-      history.push(name);
-      state.workerHistory = history;
-      save(state);
-    }
-  }
-
-  // --- savedCrews ---
-
-  function getSavedCrews() {
-    return load().savedCrews || [];
-  }
-
-  function saveCrew(name, members) {
-    name = (name || '').trim();
-    if (!name || !members || members.length === 0) return null;
-    var state = load();
-    var crews = state.savedCrews || [];
-    var id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    var crew = {
-      id: id,
-      name: name,
-      members: members.slice(),
-      createdAt: new Date().toISOString()
-    };
-    crews.push(crew);
-    if (crews.length > MAX_CREWS) {
-      crews = crews.slice(crews.length - MAX_CREWS);
-    }
-    state.savedCrews = crews;
-    save(state);
-    return crew;
-  }
-
-  function deleteCrew(id) {
-    var state = load();
-    state.savedCrews = (state.savedCrews || []).filter(function (c) {
-      return c.id !== id;
-    });
-    save(state);
-  }
-
-  // --- recentSessions ---
-
-  function getRecentSessions() {
-    return load().recentSessions || {};
-  }
-
-  function recordSession(sessionData) {
-    var state = load();
-    var today = todayStr();
-    var sessions = state.recentSessions || {};
-
-    // 날짜 롤오버: 이전 날짜 세션 → yesterday로 이동
-    var prevDaySession = null;
-    if (sessions.afternoon && dateOf(sessions.afternoon) !== today) {
-      prevDaySession = sessions.afternoon;
-    } else if (sessions.morning && dateOf(sessions.morning) !== today) {
-      prevDaySession = sessions.morning;
-    }
-
-    if (prevDaySession) {
-      sessions = { yesterday: prevDaySession };
-    }
-
-    var hour = new Date().getHours();
-    var slot = hour < 12 ? 'morning' : 'afternoon';
-
-    var session = {
-      timestamp: new Date().toISOString(),
-      date: today,
-      commonFields: {
-        office: sessionData.commonFields.office || '',
-        workplace: sessionData.commonFields.workplace || ''
-      },
-      sections: {
-        workers: { tags: (sessionData.sections.workers.tags || []).slice() },
-        documents: { tags: (sessionData.sections.documents.tags || []).slice() },
-        vehicles: (sessionData.sections.vehicles || []).map(function (v) {
-          return { tag: v.tag || '' };
-        })
-      }
-    };
-
-    sessions[slot] = session;
-    state.recentSessions = sessions;
-    save(state);
-  }
-
-  // 초기화 시 stale morning/afternoon 감지용 (rollover는 recordSession에서)
-  function isTodaySession(session) {
-    return session && dateOf(session) === todayStr();
-  }
-
   return {
+    // v2 API
+    getState: getState,
+    saveState: saveState,
+    addProjectName: addProjectName,
+    removeProjectName: removeProjectName,
+    addWorker: addWorker,
+    removeWorker: removeWorker,
+    moveWorker: moveWorker,
+    setLastSelected: setLastSelected,
+    appendSession: appendSession,
+    findMatchingSession: findMatchingSession,
+
+    // v1 alias (Phase B 전까지 유지)
     load: load,
-    save: save,
+    save: _save,
     getCommonFields: getCommonFields,
     saveCommonFields: saveCommonFields,
     saveLastOffice: saveLastOffice,

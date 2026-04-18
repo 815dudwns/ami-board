@@ -38,6 +38,7 @@
     bindShareBtn();
     bindCrewUI();
     bindSessionCopyBtns();
+    bindSettingsBtn();
     refreshCrewSelect();
     refreshSessionCopyBtnState();
   }
@@ -786,11 +787,50 @@
   }
 
   // -------------------------------------------------------
+  // 설정 버튼
+  // -------------------------------------------------------
+  function bindSettingsBtn() {
+    var btn = document.getElementById('btn-go-settings');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        Router.navigate('#/settings');
+      });
+    }
+  }
+
+  // -------------------------------------------------------
   // DOM 준비 후 실행
   // -------------------------------------------------------
+  function setup() {
+    // 라우터에 메인/설정 핸들러 등록
+    Router.register('#/', function () {
+      document.getElementById('page-main').style.display = 'block';
+      document.getElementById('page-settings').style.display = 'none';
+      // 첫 진입 시에만 init 실행 (이후 재진입은 상태 유지)
+      if (!setup._mainInited) {
+        setup._mainInited = true;
+        init(); // init 내부 loadCommonFields에서 refreshWorkerDatalist 호출
+        return;
+      }
+      // 설정에서 작업원 추가 후 재진입 시 datalist 갱신
+      refreshWorkerDatalist();
+    });
+
+    Router.register('#/settings', function () {
+      document.getElementById('page-main').style.display = 'none';
+      document.getElementById('page-settings').style.display = 'block';
+      Settings.render();
+    });
+
+    Settings.init();
+    Router.init();
+  }
+
+  setup._mainInited = false;
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', setup);
   } else {
-    init();
+    setup();
   }
 })();

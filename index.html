@@ -20,155 +20,201 @@
 </head>
 <body>
 <div class="container">
-  <h1>동산보드판</h1>
 
-  <!-- Phase 5: 세션 복사 버튼 -->
-  <div class="session-copy-row">
-    <button class="btn-secondary btn-sm" id="btn-copy-morning" type="button" disabled>오전과 동일</button>
-    <button class="btn-secondary btn-sm" id="btn-copy-yesterday" type="button" disabled>어제와 동일</button>
-    <span class="session-hint" id="session-hint"></span>
-  </div>
-
-  <!-- Phase 1: 공통필드 -->
-  <div class="card" id="section-common">
-    <h2>공통 정보</h2>
-
-    <div class="form-row">
-      <label for="field-project">공사명</label>
-      <input type="text" id="field-project" placeholder="예: 2025년AMI 보강공사(단가공사)">
+  <!-- 메인 페이지 -->
+  <section id="page-main" style="display:none;">
+    <div class="page-header">
+      <h1>동산보드판</h1>
+      <button class="btn-secondary btn-sm" id="btn-go-settings" type="button">설정</button>
     </div>
 
-    <div class="form-row">
-      <label for="field-office">사업소</label>
-      <select id="field-office">
-        <option value="">-- 선택 --</option>
-      </select>
+    <!-- Phase 5: 세션 복사 버튼 -->
+    <div class="session-copy-row">
+      <button class="btn-secondary btn-sm" id="btn-copy-morning" type="button" disabled>오전과 동일</button>
+      <button class="btn-secondary btn-sm" id="btn-copy-yesterday" type="button" disabled>어제와 동일</button>
+      <span class="session-hint" id="session-hint"></span>
     </div>
 
-    <div class="form-row">
-      <label for="field-workplace">작업장소</label>
-      <div class="input-with-btn">
-        <input type="text" id="field-workplace" placeholder="주소 또는 GPS 버튼 사용">
-        <button class="btn-secondary" id="btn-gps" type="button">GPS</button>
+    <!-- Phase 1: 공통필드 -->
+    <div class="card" id="section-common">
+      <h2>공통 정보</h2>
+
+      <div class="form-row">
+        <label for="field-project">공사명</label>
+        <input type="text" id="field-project" placeholder="예: 2025년AMI 보강공사(단가공사)">
       </div>
-      <span class="gps-status" id="gps-status"></span>
-    </div>
 
-    <div class="form-row">
-      <label for="field-content">내용</label>
-      <input type="text" id="field-content" placeholder="작업전 안전회의(오전)">
-    </div>
-
-    <div class="form-row">
-      <label for="field-date">작업일자</label>
-      <input type="text" id="field-date" placeholder="YYYY.MM.DD">
-    </div>
-  </div>
-
-  <!-- datalist: 작업원 자동완성 -->
-  <datalist id="worker-datalist"></datalist>
-
-  <!-- Phase 2: 사진 3섹션 -->
-  <div class="card" id="section-photos">
-    <h2>사진 업로드</h2>
-
-    <!-- 작업자 사진 -->
-    <div class="photo-section">
-      <h3>작업자 사진 (1장)</h3>
-      <div class="photo-controls">
-        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-          사진 선택
-          <input type="file" id="file-workers" accept="image/*" capture="environment" style="display:none;">
-        </label>
-        <button class="btn-danger btn-sm" id="btn-delete-workers" style="display:none;" type="button">삭제</button>
-        <input type="text"
-          id="tags-workers"
-          class="tag-input"
-          placeholder="작업원 이름 (공백 구분, 예: 우영준 윤상윤)"
-          list="worker-datalist">
+      <div class="form-row">
+        <label for="field-office">사업소</label>
+        <select id="field-office">
+          <option value="">-- 선택 --</option>
+        </select>
       </div>
-      <div class="preview-wrap" id="preview-workers">
-        <span class="empty-hint">사진 없음</span>
+
+      <div class="form-row">
+        <label for="field-workplace">작업장소</label>
+        <div class="input-with-btn">
+          <input type="text" id="field-workplace" placeholder="주소 또는 GPS 버튼 사용">
+          <button class="btn-secondary" id="btn-gps" type="button">GPS</button>
+        </div>
+        <span class="gps-status" id="gps-status"></span>
+      </div>
+
+      <div class="form-row">
+        <label for="field-content">내용</label>
+        <input type="text" id="field-content" placeholder="작업전 안전회의(오전)">
+      </div>
+
+      <div class="form-row">
+        <label for="field-date">작업일자</label>
+        <input type="text" id="field-date" placeholder="YYYY.MM.DD">
       </div>
     </div>
 
-    <hr>
+    <!-- datalist: 작업원 자동완성 -->
+    <datalist id="worker-datalist"></datalist>
 
-    <!-- 서류 사진 -->
-    <div class="photo-section">
-      <h3>서류 사진 (1장)</h3>
-      <div class="photo-controls">
-        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-          사진 선택
-          <input type="file" id="file-documents" accept="image/*" capture="environment" style="display:none;">
-        </label>
-        <button class="btn-danger btn-sm" id="btn-delete-documents" style="display:none;" type="button">삭제</button>
-        <input type="text"
-          id="tags-documents"
-          class="tag-input"
-          placeholder="작업원 이름 (공백 구분)"
-          list="worker-datalist">
+    <!-- Phase 2: 사진 3섹션 -->
+    <div class="card" id="section-photos">
+      <h2>사진 업로드</h2>
+
+      <!-- 작업자 사진 -->
+      <div class="photo-section">
+        <h3>작업자 사진 (1장)</h3>
+        <div class="photo-controls">
+          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+            사진 선택
+            <input type="file" id="file-workers" accept="image/*" capture="environment" style="display:none;">
+          </label>
+          <button class="btn-danger btn-sm" id="btn-delete-workers" style="display:none;" type="button">삭제</button>
+          <input type="text"
+            id="tags-workers"
+            class="tag-input"
+            placeholder="작업원 이름 (공백 구분, 예: 우영준 윤상윤)"
+            list="worker-datalist">
+        </div>
+        <div class="preview-wrap" id="preview-workers">
+          <span class="empty-hint">사진 없음</span>
+        </div>
       </div>
-      <div class="preview-wrap" id="preview-documents">
-        <span class="empty-hint">사진 없음</span>
+
+      <hr>
+
+      <!-- 서류 사진 -->
+      <div class="photo-section">
+        <h3>서류 사진 (1장)</h3>
+        <div class="photo-controls">
+          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+            사진 선택
+            <input type="file" id="file-documents" accept="image/*" capture="environment" style="display:none;">
+          </label>
+          <button class="btn-danger btn-sm" id="btn-delete-documents" style="display:none;" type="button">삭제</button>
+          <input type="text"
+            id="tags-documents"
+            class="tag-input"
+            placeholder="작업원 이름 (공백 구분)"
+            list="worker-datalist">
+        </div>
+        <div class="preview-wrap" id="preview-documents">
+          <span class="empty-hint">사진 없음</span>
+        </div>
+      </div>
+
+      <hr>
+
+      <!-- 차대비 사진 -->
+      <div class="photo-section">
+        <h3>차대비 사진 (0장 이상, 개인별 1명)</h3>
+        <div class="photo-controls">
+          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
+            사진 추가
+            <input type="file" id="file-vehicles" accept="image/*" capture="environment" multiple style="display:none;">
+          </label>
+        </div>
+        <div id="vehicle-list"></div>
       </div>
     </div>
 
-    <hr>
-
-    <!-- 차대비 사진 -->
-    <div class="photo-section">
-      <h3>차대비 사진 (0장 이상, 개인별 1명)</h3>
-      <div class="photo-controls">
-        <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-          사진 추가
-          <input type="file" id="file-vehicles" accept="image/*" capture="environment" multiple style="display:none;">
-        </label>
+    <!-- Phase 5: 조 저장/불러오기 -->
+    <div class="card" id="section-crews">
+      <h2>조 관리</h2>
+      <div class="crew-actions">
+        <button class="btn-secondary btn-sm" id="btn-save-crew" type="button">현재 작업원 조 저장</button>
+        <select id="select-crew">
+          <option value="">-- 저장된 조 선택 --</option>
+        </select>
+        <button class="btn-secondary btn-sm" id="btn-load-crew" type="button">불러오기</button>
       </div>
-      <div id="vehicle-list"></div>
+      <div id="crew-list" class="crew-list"></div>
     </div>
-  </div>
 
-  <!-- Phase 5: 조 저장/불러오기 -->
-  <div class="card" id="section-crews">
-    <h2>조 관리</h2>
-    <div class="crew-actions">
-      <button class="btn-secondary btn-sm" id="btn-save-crew" type="button">현재 작업원 조 저장</button>
-      <select id="select-crew">
-        <option value="">-- 저장된 조 선택 --</option>
-      </select>
-      <button class="btn-secondary btn-sm" id="btn-load-crew" type="button">불러오기</button>
+    <!-- Phase 3: 합성 미리보기 -->
+    <div class="card" id="section-compose">
+      <h2>합성 미리보기</h2>
+      <button class="btn-primary" id="btn-compose" type="button">합성 미리보기</button>
+      <div class="compose-result-area" id="compose-result"></div>
     </div>
-    <div id="crew-list" class="crew-list"></div>
-  </div>
 
-  <!-- Phase 3: 합성 미리보기 -->
-  <div class="card" id="section-compose">
-    <h2>합성 미리보기</h2>
-    <button class="btn-primary" id="btn-compose" type="button">합성 미리보기</button>
-    <div class="compose-result-area" id="compose-result"></div>
-  </div>
-
-  <!-- Phase 4: 밴드 공유 -->
-  <div class="card" id="section-share">
-    <h2>밴드 공유</h2>
-    <button class="btn-primary btn-share" id="btn-share" type="button">밴드 공유</button>
-    <div id="share-status" class="share-status"></div>
-    <div id="share-fallback" class="share-fallback" style="display:none;">
-      <p class="warn">이 기기는 파일 공유를 지원하지 않습니다.<br>아래 이미지를 저장한 뒤 밴드 앱에서 직접 첨부해주세요.</p>
-      <div id="share-download-list"></div>
+    <!-- Phase 4: 밴드 공유 -->
+    <div class="card" id="section-share">
+      <h2>밴드 공유</h2>
+      <button class="btn-primary btn-share" id="btn-share" type="button">밴드 공유</button>
+      <div id="share-status" class="share-status"></div>
+      <div id="share-fallback" class="share-fallback" style="display:none;">
+        <p class="warn">이 기기는 파일 공유를 지원하지 않습니다.<br>아래 이미지를 저장한 뒤 밴드 앱에서 직접 첨부해주세요.</p>
+        <div id="share-download-list"></div>
+      </div>
     </div>
-  </div>
+  </section>
+
+  <!-- 설정/온보딩 페이지 -->
+  <section id="page-settings" style="display:none;">
+    <div class="card">
+      <h2 id="settings-heading">설정</h2>
+
+      <!-- 공사명 -->
+      <div class="settings-section">
+        <h3 class="settings-subheading">공사명</h3>
+        <ul id="project-list" class="settings-list"></ul>
+        <div class="settings-add-row">
+          <input type="text" id="project-input" placeholder="공사명 입력">
+          <button class="btn-secondary btn-sm" id="btn-add-project" type="button">추가</button>
+        </div>
+      </div>
+
+      <hr>
+
+      <!-- 작업원 -->
+      <div class="settings-section">
+        <h3 class="settings-subheading">작업원</h3>
+        <ul id="worker-list" class="settings-list"></ul>
+        <div class="settings-add-row">
+          <input type="text" id="worker-input" placeholder="작업원 이름 입력">
+          <button class="btn-secondary btn-sm" id="btn-add-worker" type="button">추가</button>
+        </div>
+      </div>
+
+      <hr>
+
+      <!-- 완료/이동 버튼 -->
+      <div class="settings-actions">
+        <button class="btn-primary" id="btn-onboarding-done" type="button" disabled>완료</button>
+        <button class="btn-secondary" id="btn-go-main" type="button" style="display:none;">메인으로</button>
+      </div>
+    </div>
+  </section>
+
 </div>
 
 <script src="js/storage.js"></script>
 <script src="js/compose.js"></script>
 <script>
-  // 카카오 SDK가 있으면 비동기 로드 (GPS 역지오코딩용)
   if (typeof kakao !== 'undefined' && kakao.maps) {
     kakao.maps.load(function () {});
   }
 </script>
+<script src="js/router.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -337,6 +337,108 @@ hr {
   border-radius: 6px;
 }
 
+/* 페이지 헤더 (타이틀 + 설정 버튼) */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.page-header h1 {
+  margin-bottom: 0;
+}
+
+/* 설정 페이지 */
+.settings-section {
+  margin-bottom: 16px;
+}
+
+.settings-subheading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.settings-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.settings-item-num {
+  font-size: 13px;
+  color: #888;
+  min-width: 24px;
+  flex-shrink: 0;
+}
+
+.settings-item-name {
+  flex: 1;
+  font-size: 15px;
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: #555;
+  flex-shrink: 0;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.btn-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-danger-text {
+  color: #ef4444;
+  border-color: #fca5a5;
+}
+
+.btn-danger-text:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-add-row input {
+  flex: 1;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Phase B 전까지 임시 숨김 — DOM은 유지, CSS로만 숨김 (롤백 편의) */
+#section-crews { display: none; }
+.session-copy-row { display: none; }
+
 /* 작은 화면 대응 */
 @media (max-width: 480px) {
   .container {

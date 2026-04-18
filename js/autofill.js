@@ -26,6 +26,9 @@
     }
   };
 
+  // 다중 클릭 가드 — runSaveAndBand 동시 실행 방지
+  var _saveInProgress = false;
+
   // -------------------------------------------------------
   // 상태 초기화 (Blob URL 회수 포함)
   // -------------------------------------------------------
@@ -51,6 +54,10 @@
 
     hidePrompt();
     hidePreviewGrid();
+
+    // btn-save-band 비활성화
+    var saveBandBtn = getEl('btn-save-band');
+    if (saveBandBtn) saveBandBtn.disabled = true;
   }
 
   // -------------------------------------------------------
@@ -302,6 +309,7 @@
       });
 
       renderPreviewGrid(results);
+      updateSaveBandBtn();
     }).catch(function (err) {
       alert('합성 오류: ' + err.message);
     });
@@ -504,6 +512,214 @@
   }
 
   // -------------------------------------------------------
+  // Phase D: btn-save-band 활성/비활성 업데이트
+  // -------------------------------------------------------
+  function updateSaveBandBtn() {
+    var btn = getEl('btn-save-band');
+    if (!btn) return;
+    var hasComposed = hasSomethingComposed();
+    btn.disabled = !hasComposed;
+  }
+
+  function hasSomethingComposed() {
+    if (_autoFillState.workersPhoto && _autoFillState.workersPhoto.composedBlob) return true;
+    if (_autoFillState.documentsPhoto && _autoFillState.documentsPhoto.composedBlob) return true;
+    var names = Object.keys(_autoFillState.vehiclesByWorker);
+    for (var i = 0; i < names.length; i++) {
+      var v = _autoFillState.vehiclesByWorker[names[i]];
+      if (v && v.composedBlob) return true;
+    }
+    return false;
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 파일명 생성 헬퍼
+  //   작업자 사진: board_YYYYMMDD_작업자_N.jpg
+  //   서류 사진:   board_YYYYMMDD_서류_N.jpg
+  //   차대비 사진: board_YYYYMMDD_차대비_{이름}.jpg
+  // -------------------------------------------------------
+  function buildFilename(dateStr, type, suffix) {
+    var datePart = (dateStr || '').replace(/\./g, '').replace(/\s+/g, '');
+    if (!/^\d{8}$/.test(datePart)) {
+      // 폴백: 오늘 날짜 (YYYYMMDD)
+      datePart = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    }
+    return 'board_' + datePart + '_' + type + '_' + suffix + '.jpg';
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 딥링크 트리거 (테스트용 훅 포함)
+  // -------------------------------------------------------
+  function triggerDeepLink(url) {
+    window.location.href = url;
+  }
+
+  function triggerFallback(url) {
+    window.open(url, '_blank');
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 로컬 다운로드 (순차 지연)
+  // -------------------------------------------------------
+  function downloadBlobs(items) {
+    return new Promise(function (resolve) {
+      var delay = 0;
+      items.forEach(function (item) {
+        delay += 250;
+        (function (blob, filename, d) {
+          setTimeout(function () {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          }, d);
+        })(item.blob, item.filename, delay);
+      });
+      setTimeout(resolve, delay + 100);
+    });
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 밴드 앱 딥링크 + 폴백
+  // -------------------------------------------------------
+  function openBandApp() {
+    var ua = navigator.userAgent || '';
+    var isIOS = /iPhone|iPad|iPod/i.test(ua);
+    var isAndroid = /Android/i.test(ua);
+
+    var deeplink;
+    if (isIOS) {
+      deeplink = 'bandapp://';
+    } else if (isAndroid) {
+      deeplink = 'intent://share#Intent;package=com.nhn.android.band;scheme=band;end';
+    } else {
+      // 데스크톱: 바로 폴백
+      triggerFallback('https://band.us/');
+      return;
+    }
+
+    // visibilitychange로 앱 전환 감지 → 폴백 타이머 취소
+    var fallbackTimer = null;
+    var visHandler = null;
+
+    function cancelFallback() {
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      if (visHandler) {
+        document.removeEventListener('visibilitychange', visHandler);
+        visHandler = null;
+      }
+    }
+
+    visHandler = function () {
+      if (document.hidden) {
+        cancelFallback();
+      }
+    };
+    document.addEventListener('visibilitychange', visHandler);
+
+    // 800ms 후 앱 미설치 폴백
+    fallbackTimer = setTimeout(function () {
+      cancelFallback();
+      triggerFallback('https://band.us/');
+    }, 800);
+
+    // 딥링크 실행
+    triggerDeepLink(deeplink);
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 세션 기록
+  // -------------------------------------------------------
+  function recordSession() {
+    var projectName = (getEl('project-name') || {}).value || '';
+    var workers = _autoFillState.workers.slice().sort();
+    var office = (getEl('office') || {}).value || '마포용산지사';
+    var workplace = ((getEl('workplace') || {}).value || '').trim();
+    var state = Storage.getState();
+    var coord = (state.lastSelected && state.lastSelected.workplaceCoord) || undefined;
+
+    Storage.appendSession({
+      projectName: projectName,
+      workers: workers,
+      office: office,
+      workplace: workplace,
+      workplaceCoord: coord,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // -------------------------------------------------------
+  // Phase D: 저장 + 밴드 열기 메인 로직
+  // -------------------------------------------------------
+  function runSaveAndBand() {
+    if (_saveInProgress) return;
+    if (!hasSomethingComposed()) return;
+    _saveInProgress = true;
+
+    var dateStr = (getEl('field-date') || {}).value || '';
+    var items = [];
+    var workerCount = 0;
+    var docCount = 0;
+
+    if (_autoFillState.workersPhoto && _autoFillState.workersPhoto.composedBlob) {
+      workerCount++;
+      items.push({
+        blob: _autoFillState.workersPhoto.composedBlob,
+        filename: buildFilename(dateStr, '작업자', workerCount)
+      });
+    }
+
+    if (_autoFillState.documentsPhoto && _autoFillState.documentsPhoto.composedBlob) {
+      docCount++;
+      items.push({
+        blob: _autoFillState.documentsPhoto.composedBlob,
+        filename: buildFilename(dateStr, '서류', docCount)
+      });
+    }
+
+    var orderedWorkers = (_autoFillState.workers || []).slice().sort();
+    orderedWorkers.forEach(function (name) {
+      var v = _autoFillState.vehiclesByWorker[name];
+      if (v && v.composedBlob) {
+        items.push({
+          blob: v.composedBlob,
+          filename: buildFilename(dateStr, '차대비', name)
+        });
+      }
+    });
+
+    if (items.length === 0) { _saveInProgress = false; return; }
+
+    // 버튼 일시 비활성
+    var btn = getEl('btn-save-band');
+    if (btn) btn.disabled = true;
+
+    downloadBlobs(items)
+      .then(function () {
+        // 세션 기록 (D-5)
+        recordSession();
+        // 밴드 딥링크
+        openBandApp();
+      })
+      .catch(function (err) {
+        console.error('save+band error:', err);
+        alert('저장 중 오류가 발생했습니다: ' + err.message);
+      })
+      .then(function () {
+        // then(성공/실패 모두) — finally 미지원 환경 대비
+        if (btn) btn.disabled = false;
+        _saveInProgress = false;
+      });
+  }
+
+  // -------------------------------------------------------
   // 이벤트 바인딩
   // -------------------------------------------------------
   function bindEvents() {
@@ -526,13 +742,10 @@
       });
     }
 
-    // "저장 + 밴드 열기" — Phase D 예정 placeholder
+    // "저장 + 밴드 열기" — Phase D 실제 동작
     var saveBandBtn = getEl('btn-save-band');
     if (saveBandBtn) {
-      saveBandBtn.addEventListener('click', function () {
-        // TODO Phase D: save + band
-        alert('Phase D 예정 기능입니다.');
-      });
+      saveBandBtn.addEventListener('click', runSaveAndBand);
     }
   }
 
@@ -553,7 +766,13 @@
   window.AutoFill = {
     _state: _autoFillState,
     runAutofill: runAutofill,
-    resetState: resetState
+    resetState: resetState,
+    // Phase D 테스트 훅 — smoke에서 스텁 가능
+    _triggerDeepLink: function (url) { triggerDeepLink(url); },
+    _triggerFallback: function (url) { triggerFallback(url); },
+    _hasSomethingComposed: hasSomethingComposed,
+    _buildFilename: buildFilename,
+    _downloadBlobs: downloadBlobs
   };
 
 })();

@@ -8,7 +8,7 @@
  *   - B-6: 날짜/내용 자동 (v1 유지)
  *
  * compose.js 수정 금지 (Phase C)
- * Web Share API 호출부 유지 (Phase D)
+ * Web Share API 호출부 제거됨 (Phase D)
  * capture 속성 추가 금지 (Phase C)
  */
 
@@ -40,7 +40,6 @@
   };
 
   var previewUrls = [];
-  var shareDownloadUrls = [];
 
   // -------------------------------------------------------
   // 초기화
@@ -57,7 +56,6 @@
     bindMatchBanner();
     bindPhotoEvents();
     bindComposeBtn();
-    bindShareBtn();
     bindCrewUI();
     bindSessionCopyBtns();
     bindSettingsBtn();
@@ -726,130 +724,9 @@
     });
   }
 
-  // -------------------------------------------------------
-  // 밴드 공유 (Phase D에서 교체 예정 — 현재 v1 유지)
-  // -------------------------------------------------------
-  function bindShareBtn() {
-    document.getElementById('btn-share').addEventListener('click', runShare);
-  }
-
-  function runShare() {
-    var btn = document.getElementById('btn-share');
-    var statusEl = document.getElementById('share-status');
-    var fallbackEl = document.getElementById('share-fallback');
-
-    btn.disabled = true;
-    statusEl.textContent = '합성 중...';
-    fallbackEl.style.display = 'none';
-
-    revokePreviewUrls();
-    revokeShareDownloadUrls();
-
-    var tasks = buildComposeTasks();
-
-    if (tasks.length === 0) {
-      statusEl.textContent = '';
-      statusEl.innerHTML = '<span class="warn">업로드된 사진이 없습니다.</span>';
-      btn.disabled = false;
-      return;
-    }
-
-    var dateStr = document.getElementById('field-date').value.trim();
-    var dateTag = dateForFilename(dateStr);
-
-    var promises = tasks.map(function (t) {
-      return Compose.compose(t.file, t.boardData).then(function (blob) {
-        var filename = 'board_' + dateTag + '_' + t.section + '_' + t.index + '.jpg';
-        return new File([blob], filename, { type: 'image/jpeg', lastModified: Date.now() });
-      });
-    });
-
-    Promise.all(promises).then(function (files) {
-      statusEl.textContent = '';
-
-      var canFileShare = (
-        navigator.canShare &&
-        navigator.share &&
-        navigator.canShare({ files: files })
-      );
-
-      if (canFileShare) {
-        var office = document.getElementById('office').value;
-        var workplace = document.getElementById('workplace').value.trim();
-        var content = document.getElementById('field-content').value.trim();
-
-        return navigator.share({
-          files: files,
-          title: '동산보드판 사진',
-          text: office + ' / ' + workplace + ' / ' + content
-        }).then(function () {
-          onShareSuccess();
-          btn.disabled = false;
-        }).catch(function (err) {
-          btn.disabled = false;
-          if (err.name === 'AbortError') return;
-          alert('공유 중 오류가 발생했습니다: ' + err.message);
-        });
-      } else {
-        btn.disabled = false;
-        showShareFallback(files);
-      }
-    }).catch(function (err) {
-      statusEl.textContent = '';
-      btn.disabled = false;
-      alert('합성 중 오류가 발생했습니다: ' + err.message);
-    });
-  }
-
-  function showShareFallback(files) {
-    var fallbackEl = document.getElementById('share-fallback');
-    var downloadList = document.getElementById('share-download-list');
-    downloadList.innerHTML = '';
-
-    files.forEach(function (file) {
-      var url = URL.createObjectURL(file);
-      shareDownloadUrls.push(url);
-
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      a.className = 'btn-secondary btn-sm download-link';
-      a.textContent = file.name + ' 저장';
-      downloadList.appendChild(a);
-    });
-
-    fallbackEl.style.display = 'block';
-  }
-
   function revokePreviewUrls() {
     previewUrls.forEach(function (u) { URL.revokeObjectURL(u); });
     previewUrls = [];
-  }
-
-  function revokeShareDownloadUrls() {
-    shareDownloadUrls.forEach(function (u) { URL.revokeObjectURL(u); });
-    shareDownloadUrls = [];
-  }
-
-  function onShareSuccess() {
-    // sessionHistory 기록 (v2)
-    var projectName = document.getElementById('project-name').value || '';
-    var workers = getSelectedWorkers().slice().sort();
-    var office = document.getElementById('office').value || '마포용산지사';
-    var workplace = document.getElementById('workplace').value.trim();
-    var state = Storage.getState();
-    var coord = (state.lastSelected && state.lastSelected.workplaceCoord) || undefined;
-
-    Storage.appendSession({
-      projectName: projectName,
-      workers: workers,
-      office: office,
-      workplace: workplace,
-      workplaceCoord: coord,
-      timestamp: new Date().toISOString()
-    });
-
-    refreshSessionCopyBtnState();
   }
 
   // -------------------------------------------------------

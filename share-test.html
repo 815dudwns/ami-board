@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Share API 검증</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f2f4f6;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #666; margin-bottom: 20px; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card h2 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .badge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .badge-ok { background: #e6f4ea; color: #1e7e34; }
+    .badge-no { background: #fde8e8; color: #b91c1c; }
+    .btn-group { display: flex; flex-direction: column; gap: 10px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #3b82f6;
+      color: #fff;
+      transition: opacity 0.15s;
+    }
+    button:active { opacity: 0.75; }
+    button:disabled { background: #bbb; cursor: not-allowed; }
+    .guide {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+      background: #fffbe6;
+      border-left: 4px solid #f59e0b;
+      padding: 12px 14px;
+      border-radius: 8px;
+    }
+    #log {
+      list-style: none;
+      font-size: 13px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    #log li {
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+      line-height: 1.5;
+    }
+    #log li:last-child { border-bottom: none; }
+    .log-ok { color: #1e7e34; }
+    .log-err { color: #b91c1c; }
+    .log-info { color: #555; }
+    .ts { color: #999; font-size: 11px; margin-right: 6px; }
+    #ua { font-size: 11px; color: #888; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Web Share API 검증</h1>
+  <p class="subtitle">iOS Safari + 밴드 앱 자동 첨부 가능 여부 확인용 페이지</p>
+
+  <div class="card">
+    <h2>지원 상태</h2>
+    <div class="status-row">
+      <span>navigator.share</span>
+      <span id="s-share" class="badge">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span>navigator.canShare</span>
+      <span id="s-canshare" class="badge">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span>Files 파라미터 지원</span>
+      <span id="s-files" class="badge">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span>User Agent</span>
+    </div>
+    <div id="ua"></div>
+  </div>
+
+  <div class="card">
+    <h2>공유 테스트</h2>
+    <div class="btn-group">
+      <button id="btn1" onclick="runShare(1)">1장 공유</button>
+      <button id="btn3" onclick="runShare(3)">3장 공유</button>
+      <button id="btn5" onclick="runShare(5)">5장 공유</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>결과 로그</h2>
+    <ul id="log"><li class="log-info"><span class="ts">--:--:--</span>버튼을 눌러 테스트하세요.</li></ul>
+  </div>
+
+  <div class="guide">
+    버튼 누른 후 Share Sheet에서 <strong>밴드</strong> 선택<br>
+    밴드 앱에서 사진이 자동 첨부되었는지 확인 후 결과를 알려주세요.
+  </div>
+
+  <script>
+    // ── 상태 카드 초기화 ──────────────────────────────
+    (function initStatus() {
+      function badge(id, ok) {
+        var el = document.getElementById(id);
+        el.textContent = ok ? '지원' : '미지원';
+        el.className = 'badge ' + (ok ? 'badge-ok' : 'badge-no');
+      }
+
+      var hasShare = typeof navigator.share === 'function';
+      var hasCanShare = typeof navigator.canShare === 'function';
+      badge('s-share', hasShare);
+      badge('s-canshare', hasCanShare);
+
+      // Files 지원 여부: 더미 File로 canShare 호출
+      var filesOk = false;
+      if (hasCanShare) {
+        try {
+          var dummy = new File(['x'], 'dummy.jpg', { type: 'image/jpeg' });
+          filesOk = navigator.canShare({ files: [dummy] });
+        } catch (e) {
+          filesOk = false;
+        }
+      }
+      badge('s-files', filesOk);
+
+      document.getElementById('ua').textContent = navigator.userAgent;
+
+      // 버튼 비활성화 (share 자체가 없으면)
+      if (!hasShare) {
+        ['btn1', 'btn3', 'btn5'].forEach(function(id) {
+          document.getElementById(id).disabled = true;
+        });
+        addLog('Share API 미지원 — 데스크톱 Chrome 등에서는 정상입니다.', 'log-info');
+      }
+    })();
+
+    // ── 로그 추가 ─────────────────────────────────────
+    function addLog(msg, cls) {
+      var ul = document.getElementById('log');
+      var li = document.createElement('li');
+      li.className = cls || 'log-info';
+      var now = new Date();
+      var ts = String(now.getHours()).padStart(2,'0') + ':' +
+               String(now.getMinutes()).padStart(2,'0') + ':' +
+               String(now.getSeconds()).padStart(2,'0');
+      li.innerHTML = '<span class="ts">' + ts + '</span>' + msg;
+      ul.insertBefore(li, ul.firstChild);
+    }
+
+    // ── Canvas로 색상 이미지 생성 → File ─────────────
+    var COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+
+    function makeImageFile(index) {
+      return new Promise(function(resolve) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 300;
+        canvas.height = 300;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = COLORS[index % COLORS.length];
+        ctx.fillRect(0, 0, 300, 300);
+        // 번호 표시
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 80px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(index + 1), 150, 150);
+        canvas.toBlob(function(blob) {
+          var file = new File([blob], 'test_' + (index + 1) + '.jpg', { type: 'image/jpeg' });
+          resolve(file);
+        }, 'image/jpeg', 0.9);
+      });
+    }
+
+    // ── 공유 실행 ─────────────────────────────────────
+    function runShare(count) {
+      addLog(count + '장 공유 준비 중...', 'log-info');
+
+      var promises = [];
+      for (var i = 0; i < count; i++) {
+        promises.push(makeImageFile(i));
+      }
+
+      Promise.all(promises).then(function(files) {
+        // canShare 체크
+        if (navigator.canShare && !navigator.canShare({ files: files })) {
+          addLog('[' + count + '장] canShare({ files }) → false. 이 기기/브라우저는 파일 공유 불가.', 'log-err');
+          return;
+        }
+
+        return navigator.share({
+          files: files,
+          title: '테스트 ' + count + '장',
+          text: 'ami-board Web Share 검증'
+        }).then(function() {
+          addLog('[' + count + '장] 공유 성공 (Share Sheet 완료)', 'log-ok');
+        });
+      }).catch(function(err) {
+        if (err && err.name === 'AbortError') {
+          addLog('[' + count + '장] 취소됨 (AbortError — 정상)', 'log-info');
+        } else if (err && err.name === 'NotAllowedError') {
+          addLog('[' + count + '장] 권한 거부 (NotAllowedError) — 사용자 제스처 없이 호출됨', 'log-err');
+        } else {
+          addLog('[' + count + '장] 오류: ' + (err ? err.name + ' — ' + err.message : '알 수 없음'), 'log-err');
+        }
+      });
+    }
+  </script>
+</body>
+</html>

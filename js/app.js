@@ -15,6 +15,9 @@
 (function () {
   var AM_HOUR_BOUNDARY = 12;
 
+  // 작업일자 수동 변경 감지 플래그 (페이지 새로고침 시 자동 초기화)
+  var _userChangedDate = false;
+
   // Phase C에서 접근할 선택된 작업원 접근자 — 외부 참조 가능
   // getSelectedWorkers() → string[]
   var _selectedWorkers = [];
@@ -50,6 +53,7 @@
     loadWorkplace();
     autoFillDate();
     autoFillContent();
+    bindDateAutoRefresh();
     buildWorkerChips();
     refreshWorkerDatalist();
     bindFormEvents();
@@ -127,26 +131,105 @@
   }
 
   // -------------------------------------------------------
-  // B-6: 날짜 자동 채움
+  // 오늘 날짜를 YYYY-MM-DD 형식으로 반환
   // -------------------------------------------------------
-  function autoFillDate() {
+  function todayISO() {
     var today = new Date();
     var y = today.getFullYear();
     var m = String(today.getMonth() + 1).padStart(2, '0');
     var d = String(today.getDate()).padStart(2, '0');
-    document.getElementById('field-date').value = y + '.' + m + '.' + d;
+    return y + '-' + m + '-' + d;
   }
 
   // -------------------------------------------------------
-  // B-6: 내용 자동 채움 (시간대 기반)
+  // B-6: 날짜 자동 채움 (type="date" 표준 YYYY-MM-DD)
+  // -------------------------------------------------------
+  function autoFillDate() {
+    document.getElementById('field-date').value = todayISO();
+  }
+
+  // -------------------------------------------------------
+  // 작업일자 자동 갱신 (자정 경과 대응)
+  //   - visibilitychange / focus / pageshow 이벤트
+  //   - 1분 간격 setInterval 백업
+  //   - 사용자가 수동 변경한 경우(_userChangedDate=true) 갱신 중지
+  // -------------------------------------------------------
+  function bindDateAutoRefresh() {
+    var el = document.getElementById('field-date');
+    if (!el) return;
+
+    // 수동 변경 감지
+    el.addEventListener('change', function () {
+      _userChangedDate = true;
+    });
+
+    function refreshIfNeeded() {
+      if (_userChangedDate) return;
+      var iso = todayISO();
+      if (el.value !== iso) {
+        el.value = iso;
+      }
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) refreshIfNeeded();
+    });
+
+    window.addEventListener('focus', refreshIfNeeded);
+
+    window.addEventListener('pageshow', function () {
+      refreshIfNeeded();
+    });
+
+    setInterval(refreshIfNeeded, 60000);
+  }
+
+  // -------------------------------------------------------
+  // B-6: 내용 토글 버튼 초기화 (시간대 기반)
   // -------------------------------------------------------
   function autoFillContent() {
     var hour = new Date().getHours();
-    var slot = hour < AM_HOUR_BOUNDARY ? '오전' : '오후';
-    var el = document.getElementById('field-content');
-    if (!el.value) {
-      el.value = '작업전 안전회의(' + slot + ')';
+    var isAM = hour < AM_HOUR_BOUNDARY;
+    setContentToggle(isAM ? 'am' : 'pm');
+    bindContentToggle();
+  }
+
+  // 토글 상태 설정 (내부)
+  function setContentToggle(period) {
+    var amBtn = document.getElementById('btn-content-am');
+    var pmBtn = document.getElementById('btn-content-pm');
+    if (!amBtn || !pmBtn) return;
+
+    if (period === 'am') {
+      amBtn.classList.add('active');
+      amBtn.setAttribute('aria-pressed', 'true');
+      pmBtn.classList.remove('active');
+      pmBtn.setAttribute('aria-pressed', 'false');
+    } else {
+      pmBtn.classList.add('active');
+      pmBtn.setAttribute('aria-pressed', 'true');
+      amBtn.classList.remove('active');
+      amBtn.setAttribute('aria-pressed', 'false');
     }
+  }
+
+  // 토글 버튼 클릭 이벤트 바인딩
+  function bindContentToggle() {
+    var amBtn = document.getElementById('btn-content-am');
+    var pmBtn = document.getElementById('btn-content-pm');
+    if (amBtn) {
+      amBtn.addEventListener('click', function () { setContentToggle('am'); });
+    }
+    if (pmBtn) {
+      pmBtn.addEventListener('click', function () { setContentToggle('pm'); });
+    }
+  }
+
+  // 현재 토글 값 읽기 → "작업전안전회의 오전" 또는 "작업전안전회의 오후"
+  function getContentValue() {
+    var amBtn = document.getElementById('btn-content-am');
+    var period = (amBtn && amBtn.getAttribute('aria-pressed') === 'true') ? '오전' : '오후';
+    return '작업전안전회의 ' + period;
   }
 
   // -------------------------------------------------------
@@ -499,13 +582,17 @@
   // 합성에서 참조하는 공통 데이터 수집
   // -------------------------------------------------------
   function collectBoardData(workersStr) {
+    // field-date: YYYY-MM-DD → YYYY.MM.DD (compose 표 표시용)
+    var rawDate = document.getElementById('field-date').value.trim();
+    var workDate = rawDate.replace(/-/g, '.');
+
     return {
       projectName: (document.getElementById('project-name') || {}).value || '',
       office: document.getElementById('office').value || '마포용산지사',
       workplace: document.getElementById('workplace').value.trim(),
-      content: document.getElementById('field-content').value.trim(),
+      content: getContentValue(),
       workers: workersStr,
-      workDate: document.getElementById('field-date').value.trim()
+      workDate: workDate
     };
   }
 

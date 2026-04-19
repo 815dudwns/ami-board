@@ -70,13 +70,16 @@
       </div>
 
       <div class="form-row">
-        <label for="field-content">내용</label>
-        <input type="text" id="field-content" placeholder="작업전 안전회의(오전)">
+        <label>내용</label>
+        <div class="content-toggle" id="content-toggle" role="group" aria-label="내용 선택">
+          <button type="button" id="btn-content-am" class="btn-toggle" aria-pressed="false">오전</button>
+          <button type="button" id="btn-content-pm" class="btn-toggle" aria-pressed="false">오후</button>
+        </div>
       </div>
 
       <div class="form-row">
         <label for="field-date">작업일자</label>
-        <input type="text" id="field-date" placeholder="YYYY.MM.DD">
+        <input type="date" id="field-date">
       </div>
 
       <!-- B-4: 작업원 칩 -->

@@ -612,7 +612,8 @@
   // Phase D 유지: 파일명 생성
   // -------------------------------------------------------
   function buildFilename(dateStr, type, suffix) {
-    var datePart = (dateStr || '').replace(/\./g, '').replace(/\s+/g, '');
+    // YYYY.MM.DD 또는 YYYY-MM-DD 모두 처리 (점·하이픈 제거)
+    var datePart = (dateStr || '').replace(/[\.\-]/g, '').replace(/\s+/g, '');
     if (!/^\d{8}$/.test(datePart)) {
       datePart = new Date().toISOString().split('T')[0].replace(/-/g, '');
     }

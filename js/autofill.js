@@ -841,42 +841,26 @@
   }
 
   // -------------------------------------------------------
-  // Phase D 유지: 밴드 앱 딥링크 + 폴백
+  // Phase D 유지: 밴드 앱 딥링크 (폴백 없음 — 밴드 앱 설치 필수 전제)
   // -------------------------------------------------------
   function openBandApp() {
     var ua = navigator.userAgent || '';
-    var isIOS = /iPhone|iPad|iPod/i.test(ua);
     var isAndroid = /Android/i.test(ua);
 
-    var deeplink;
-    if (isIOS) {
-      deeplink = 'bandapp://';
-    } else if (isAndroid) {
-      deeplink = 'intent://share#Intent;package=com.nhn.android.band;scheme=band;end';
+    if (isAndroid) {
+      // Android: intent URL은 window.location으로 이동해도 앱 없으면 브라우저가
+      // fallback_url 없이 조용히 실패하므로 페이지 이탈 없음.
+      // S.browser_fallback_url 미포함으로 band.us 이동 차단.
+      window.location.href = 'intent://share#Intent;package=com.nhn.android.band;scheme=band;end';
     } else {
-      triggerFallback('https://band.us/');
-      return;
+      // iOS (및 기타): hidden iframe으로 딥링크 시도 → 페이지 이동 없음.
+      // 밴드 앱 설치 시 앱 전환, 미설치 시 Safari 조용히 실패.
+      var iframe = document.createElement('iframe');
+      iframe.style.cssText = 'display:none;width:0;height:0;border:0;';
+      iframe.src = 'bandapp://';
+      document.body.appendChild(iframe);
+      setTimeout(function () { iframe.remove(); }, 1000);
     }
-
-    var fallbackTimer = null;
-    var visHandler = null;
-
-    function cancelFallback() {
-      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
-      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler = null; }
-    }
-
-    visHandler = function () {
-      if (document.hidden) cancelFallback();
-    };
-    document.addEventListener('visibilitychange', visHandler);
-
-    fallbackTimer = setTimeout(function () {
-      cancelFallback();
-      triggerFallback('https://band.us/');
-    }, 800);
-
-    triggerDeepLink(deeplink);
   }
 
   // -------------------------------------------------------

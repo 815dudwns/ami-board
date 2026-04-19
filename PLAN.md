@@ -141,9 +141,9 @@ v1 `compose.js` 재사용. 좌하단 6행 표, Noto Sans KR, EXIF 처리, JPEG 9
   1. 합성 사진 로컬 다운로드 (`<a download>` 트릭)
      - 파일명: `board_20260418_작업자_1.jpg`, `board_20260418_차대비_우영준.jpg`
   2. 밴드 앱 딥링크 시도
-     - iOS: `bandapp://`
-     - Android: `intent://...`
-     - 폴백(800ms 후): `https://band.us/`
+     - iOS: hidden iframe에 `bandapp://` → 페이지 이동 없음, 앱 전환. 미설치 시 조용히 실패.
+     - Android: `window.location.href = 'intent://...#Intent;package=com.nhn.android.band;scheme=band;end'` (`S.browser_fallback_url` 미포함 → band.us 이동 차단)
+     - 폴백 없음 — 밴드 앱 미설치 시 아무 동작 없음 (사용자에 밴드 앱 설치 필수)
 - 사용자가 밴드 앱에서 저장된 사진을 직접 첨부
 
 ## 6. 제거 사항 (v1 → v2)

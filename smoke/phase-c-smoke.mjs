@@ -186,11 +186,12 @@ async function runTests() {
     results['Scenario 3'] = (matchResult3.hasMatch && bannerVisible && workplaceVal.includes('합정동')) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 4: 매치 없음 → GPS 경로 실제 호출 확인
+    // Scenario 4: 매치 없음 → GPS 경로 확인 + 멀티셀렉트 input 존재 확인
+    //   Phase F: 순차 프롬프트 제거 → 멀티셀렉트 1회 플로우
     // =========================================================
-    console.log('\n=== Scenario 4: 매치 없음 → GPS 경로 (실제 호출) ===');
+    console.log('\n=== Scenario 4: 매치 없음 → GPS 경로 + 멀티셀렉트 input 존재 ===');
 
-    // getCurrentPosition 스텁 주입 (navigateOnNewDocument로 새 페이지 로딩 시 적용)
+    // getCurrentPosition 스텁 주입
     await page.evaluateOnNewDocument(() => {
       window._geoCalledCount = 0;
       Object.defineProperty(navigator, 'geolocation', {
@@ -206,7 +207,7 @@ async function runTests() {
       });
     });
 
-    // 빈 sessionHistory + 작업원 기록으로 재설정
+    // 빈 sessionHistory로 재설정
     await page.evaluate(() => {
       const state = JSON.parse(localStorage.getItem('ami-board-state') || '{}');
       state.sessionHistory = [];
@@ -220,7 +221,32 @@ async function runTests() {
     await page.goto(BASE_URL, { waitUntil: 'networkidle2' });
     await sleep(300);
 
-    // 작업원 체크 확인
+    // 멀티셀렉트 input 존재 확인 (Phase F 신규)
+    const multiInputCheck = await page.evaluate(() => {
+      const input = document.getElementById('auto-file-multi');
+      return {
+        exists: !!input,
+        isMultiple: input ? input.multiple : false,
+        hasNoCapture: input ? !input.hasAttribute('capture') : false,
+        accept: input ? input.accept : ''
+      };
+    });
+
+    console.log('  4a. #auto-file-multi 존재:', multiInputCheck.exists ? 'PASS' : 'FAIL');
+    console.log('  4b. multiple 속성:', multiInputCheck.isMultiple ? 'PASS' : 'FAIL');
+    console.log('  4c. capture 속성 없음:', multiInputCheck.hasNoCapture ? 'PASS' : 'FAIL');
+
+    // GPS 호출 확인: step1CommonFields는 자동 입히기 클릭 시 실행
+    // 파일 다이얼로그를 차단하여 GPS 단계까지만 실행 확인
+    await page.evaluate(() => {
+      // auto-file-multi click 스텁 (파일 다이얼로그 방지)
+      const input = document.getElementById('auto-file-multi');
+      if (input) {
+        input._origClick = input.click.bind(input);
+        input.click = function () { /* noop */ };
+      }
+    });
+
     const workerChecked4 = await page.evaluate(() => {
       const cb = document.querySelector('#worker-chips input[type="checkbox"]');
       return cb && cb.checked;
@@ -230,45 +256,32 @@ async function runTests() {
       await sleep(200);
     }
 
-    // 자동 입히기 클릭 → 1단계(GPS) 실행 후 2단계 프롬프트 대기
     dialogs.length = 0;
     await page.click('#btn-autofill');
-    await sleep(800); // GPS + step2 프롬프트 대기
+    await sleep(1200); // GPS 완료 대기
 
     const geoCalledCount = await page.evaluate(() => window._geoCalledCount || 0);
-    const promptVisible = await page.evaluate(() => {
-      const prompt = document.getElementById('autofill-prompt');
-      return prompt && prompt.style.display !== 'none';
-    });
+    console.log('  4d. getCurrentPosition 호출:', geoCalledCount >= 1 ? `PASS (${geoCalledCount}회)` : 'FAIL (0회)');
 
-    console.log('  4a. getCurrentPosition 호출:', geoCalledCount >= 1 ? `PASS (${geoCalledCount}회)` : 'FAIL (0회)');
-    console.log('  4b. 2단계 프롬프트 표시:', promptVisible ? 'PASS' : 'FAIL');
-
-    // 건너뛰기로 플로우 중단
-    await page.click('#btn-autofill-skip').catch(() => {});
-    await sleep(200);
-    await page.click('#btn-autofill-skip').catch(() => {});
-    await sleep(200);
-    // vehicle 루프 건너뛰기
-    await page.click('#btn-autofill-skip').catch(() => {});
-    await sleep(800);
-
-    results['Scenario 4'] = (geoCalledCount >= 1 && promptVisible) ? 'PASS' : 'FAIL';
+    results['Scenario 4'] = (
+      multiInputCheck.exists &&
+      multiInputCheck.isMultiple &&
+      multiInputCheck.hasNoCapture &&
+      geoCalledCount >= 1
+    ) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 5: auto-file-* inputs에 capture 속성 없음 확인
+    // Scenario 5: file inputs에 capture 속성 없음 확인
+    //   Phase F: auto-file-multi (멀티셀렉트) + 보조 UI 확인
     // =========================================================
     console.log('\n=== Scenario 5: file input capture 속성 없음 ===');
 
     const captureCheck = await page.evaluate(() => {
       const inputs = [
-        document.getElementById('auto-file-workers'),
-        document.getElementById('auto-file-documents'),
-        document.getElementById('auto-file-vehicle'),
-        // 보조 UI도 확인
-        document.getElementById('file-workers'),
-        document.getElementById('file-documents'),
-        document.getElementById('file-vehicles')
+        document.getElementById('auto-file-multi'),   // Phase F 신규
+        document.getElementById('file-workers'),       // 보조 UI
+        document.getElementById('file-documents'),     // 보조 UI
+        document.getElementById('file-vehicles')       // 보조 UI
       ];
 
       const issues = [];
@@ -279,69 +292,59 @@ async function runTests() {
         }
       });
 
-      const autoWorkers = !!document.getElementById('auto-file-workers');
-      const autoDocs = !!document.getElementById('auto-file-documents');
-      const autoVehicle = !!document.getElementById('auto-file-vehicle');
+      const autoMulti = !!document.getElementById('auto-file-multi');
 
       return {
-        allExist: autoWorkers && autoDocs && autoVehicle,
+        allExist: autoMulti,
         noCapture: issues.length === 0,
         issues: issues
       };
     });
 
-    console.log('  5a. auto-file-* inputs 존재:', captureCheck.allExist ? 'PASS' : 'FAIL');
+    console.log('  5a. #auto-file-multi 존재:', captureCheck.allExist ? 'PASS' : 'FAIL');
     console.log('  5b. capture 속성 없음:', captureCheck.noCapture ? 'PASS' : `FAIL (${captureCheck.issues.join(', ')})`);
     results['Scenario 5'] = (captureCheck.allExist && captureCheck.noCapture) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 6: 합성 미리보기 그리드 + "저장 + 밴드 열기" 버튼
+    // Scenario 6: 합성 미리보기 그리드 + 슬롯 할당 UI + 저장 버튼
+    //   Phase F: 슬롯 할당 UI (#slot-assign-ui) 존재 추가 확인
     // =========================================================
-    console.log('\n=== Scenario 6: 미리보기 그리드 + 저장+밴드 버튼 ===');
+    console.log('\n=== Scenario 6: 미리보기 그리드 + 슬롯 할당 UI + 저장+밴드 버튼 ===');
 
     const gridCheck = await page.evaluate(() => {
       const grid = document.getElementById('preview-grid');
       const items = document.getElementById('preview-grid-items');
       const saveBand = document.getElementById('btn-save-band');
+      const slotUI = document.getElementById('slot-assign-ui');
+      const slotList = document.getElementById('slot-list');
+      const composeBtn = document.getElementById('btn-compose-preview');
       return {
         gridExists: !!grid,
         itemsExists: !!items,
         saveBandExists: !!saveBand,
-        saveBandDisabled: saveBand ? saveBand.disabled : false
+        saveBandDisabled: saveBand ? saveBand.disabled : false,
+        slotUIExists: !!slotUI,
+        slotListExists: !!slotList,
+        composeBtnExists: !!composeBtn
       };
     });
 
     console.log('  6a. #preview-grid 존재:', gridCheck.gridExists ? 'PASS' : 'FAIL');
     console.log('  6b. #preview-grid-items 존재:', gridCheck.itemsExists ? 'PASS' : 'FAIL');
     console.log('  6c. #btn-save-band 존재:', gridCheck.saveBandExists ? 'PASS' : 'FAIL');
-    console.log('  6d. #btn-save-band disabled(placeholder):', gridCheck.saveBandDisabled ? 'PASS' : 'FAIL');
-
-    // "저장 + 밴드 열기" 클릭 시 Phase D 예정 알림 확인
-    if (gridCheck.saveBandExists) {
-      // grid 표시 + disabled 해제 후 테스트 (hidden 요소 클릭 불가 우회)
-      await page.evaluate(() => {
-        const grid = document.getElementById('preview-grid');
-        grid.style.display = 'block';
-        document.getElementById('btn-save-band').disabled = false;
-      });
-      await sleep(100);
-      dialogs.length = 0;
-      await page.click('#btn-save-band');
-      await sleep(200);
-      const phaseDAlertsShown = dialogs.some(d => d.message && d.message.includes('Phase D'));
-      console.log('  6e. Phase D 알림:', phaseDAlertsShown ? 'PASS' : 'FAIL');
-      // 복원
-      await page.evaluate(() => {
-        document.getElementById('preview-grid').style.display = 'none';
-        document.getElementById('btn-save-band').disabled = true;
-      });
-    }
+    console.log('  6d. #btn-save-band disabled(초기):', gridCheck.saveBandDisabled ? 'PASS' : 'FAIL');
+    console.log('  6e. #slot-assign-ui 존재(Phase F):', gridCheck.slotUIExists ? 'PASS' : 'FAIL');
+    console.log('  6f. #slot-list 존재(Phase F):', gridCheck.slotListExists ? 'PASS' : 'FAIL');
+    console.log('  6g. #btn-compose-preview 존재(Phase F):', gridCheck.composeBtnExists ? 'PASS' : 'FAIL');
 
     results['Scenario 6'] = (
       gridCheck.gridExists &&
       gridCheck.itemsExists &&
       gridCheck.saveBandExists &&
-      gridCheck.saveBandDisabled
+      gridCheck.saveBandDisabled &&
+      gridCheck.slotUIExists &&
+      gridCheck.slotListExists &&
+      gridCheck.composeBtnExists
     ) ? 'PASS' : 'FAIL';
 
     // =========================================================

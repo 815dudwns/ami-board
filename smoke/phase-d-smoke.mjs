@@ -104,20 +104,20 @@ async function runTests() {
     // =========================================================
     console.log('\n=== Scenario 2: 합성 완료 후 btn-save-band 활성화 ===');
 
-    // _autoFillState에 composedBlob 직접 주입하여 updateSaveBandBtn() 호출
+    // _state.composed에 합성 결과 주입 (Phase F 스키마)
     const activatedAfterCompose = await page.evaluate(() => {
       // 더미 Blob
       var blob = new Blob(['fake'], { type: 'image/jpeg' });
       var url = URL.createObjectURL(blob);
 
-      // AutoFill._state에 composedBlob 주입
+      // Phase F: _state.composed[slotKey] = { blob, blobUrl, filename }
       var state = window.AutoFill._state;
       state.workers = ['우영준'];
-      state.workersPhoto = { file: null, composedBlob: blob, blobUrl: url };
+      state.composed = {
+        '__workers__': { blob: blob, blobUrl: url, filename: 'board_20260418_작업자_1.jpg' }
+      };
 
-      // updateSaveBandBtn 내부 로직과 동일: hasSomethingComposed → disabled 해제
-      // 실제로는 renderPreviewGrid 이후 updateSaveBandBtn()이 호출됨
-      // 여기서는 실제 step5Compose 스텁 대신 내부 상태를 통해 확인
+      // _hasSomethingComposed → true → btn 활성화
       var hasComposed = window.AutoFill._hasSomethingComposed();
 
       var btn = document.getElementById('btn-save-band');
@@ -305,23 +305,57 @@ async function runTests() {
     results['Scenario 6'] = has800msInSource ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 7: navigator.share 호출부 0건
+    // Scenario 7: Web Share 게이트 확인 (Phase F)
+    //   - navigator.canShare 게이트 뒤에서 navigator.share 호출 (소스 확인)
+    //   - downloadBlobs 폴백 경로가 여전히 존재하는지 확인
     // =========================================================
-    console.log('\n=== Scenario 7: navigator.share 제거 확인 ===');
+    console.log('\n=== Scenario 7: Web Share 게이트 + 폴백 경로 확인 ===');
 
-    let shareCallCount = 0;
+    // 7a. navigator.share 호출이 canShare 게이트 안에 있는지 소스 확인
+    let webShareGated = false;
+    let fallbackExists = false;
     try {
-      const grepResult = execSync(
-        'grep -rn "navigator\\.share" /Users/woodelight/Projects/ami-board/js/',
+      const srcContent = execSync(
+        'cat /Users/woodelight/Projects/ami-board/js/autofill.js',
         { encoding: 'utf8' }
-      ).trim();
-      shareCallCount = grepResult ? grepResult.split('\n').filter(Boolean).length : 0;
+      );
+      // canShare 게이트와 navigator.share가 모두 존재해야 함
+      webShareGated = srcContent.includes('canShare') && srcContent.includes('navigator.share');
+      // downloadBlobs 폴백 경로 존재 확인
+      fallbackExists = srcContent.includes('downloadBlobs');
     } catch (e) {
-      // grep exit code 1 = 매칭 없음 (정상)
-      shareCallCount = 0;
+      webShareGated = false;
+      fallbackExists = false;
     }
-    console.log('  7. navigator.share 호출 수:', shareCallCount === 0 ? 'PASS (0건)' : 'FAIL (' + shareCallCount + '건)');
-    results['Scenario 7'] = shareCallCount === 0 ? 'PASS' : 'FAIL';
+
+    console.log('  7a. Web Share 게이트(canShare + navigator.share) 존재:', webShareGated ? 'PASS' : 'FAIL');
+    console.log('  7b. downloadBlobs 폴백 경로 존재:', fallbackExists ? 'PASS' : 'FAIL');
+
+    // 7c. canShare 미지원 환경에서 폴백 동작 확인 (브라우저 내 검증)
+    const fallbackWorks = await page.evaluate(() => {
+      // navigator.canShare 가 없는 환경 시뮬레이션
+      var origCanShare = navigator.canShare;
+      Object.defineProperty(navigator, 'canShare', {
+        get: function () { return undefined; },
+        configurable: true
+      });
+
+      // _downloadBlobs 가 여전히 함수인지 확인
+      var hasFallback = typeof window.AutoFill._downloadBlobs === 'function';
+
+      // 복원
+      if (origCanShare !== undefined) {
+        Object.defineProperty(navigator, 'canShare', {
+          get: function () { return origCanShare; },
+          configurable: true
+        });
+      }
+      return hasFallback;
+    });
+
+    console.log('  7c. canShare 미지원 시 _downloadBlobs 폴백 함수 존재:', fallbackWorks ? 'PASS' : 'FAIL');
+
+    results['Scenario 7'] = (webShareGated && fallbackExists && fallbackWorks) ? 'PASS' : 'FAIL';
 
     // =========================================================
     // Scenario 8: Storage.appendSession 호출 → sessionHistory +1

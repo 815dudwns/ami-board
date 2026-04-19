@@ -1,63 +1,69 @@
 /*
- * autofill.js — Phase C: "자동 입히기" 통합 플로우
+ * autofill.js — Phase F: 멀티셀렉트 + 슬롯 할당 + Web Share
  *
  * 의존: storage.js, compose.js, app.js(window.AppMain)
- * 파일 입력: auto-file-workers / auto-file-documents / auto-file-vehicle
- *   (보조 UI의 #file-workers 등과 완전 분리 — 기존 핸들러 영향 없음)
- * 취소 감지: window.focus + confirm 패턴 대신 "선택" / "건너뛰기" UI 버튼 채택
- *   (PLAN의 Y/N confirm 패턴과의 차이: 모바일 change 미발화 우회를 위해 버튼 폴백 사용)
+ *
+ * 플로우:
+ *   1. 공통필드 자동채우기 (GPS/매치) — Phase C 로직 유지
+ *   2. 멀티셀렉트 1회: <input type="file" accept="image/*" multiple>
+ *   3. 슬롯 할당 UI: 썸네일 그리드 + 슬롯 목록
+ *   4. 합성: 할당된 슬롯만 compose() 일괄 처리
+ *   5. 저장: Web Share 우선 → 폴백 download
+ *   6. 밴드 열기: bandapp:// 딥링크
  */
 
 (function () {
 
   // -------------------------------------------------------
-  // 임시 상태 (메모리 only, localStorage 사용 안 함)
+  // 임시 상태 (메모리 only)
   // -------------------------------------------------------
-  var _autoFillState = {
+  var _state = {
     active: false,
-    step: 0,                   // 1~5
-    workers: [],               // 현재 선택된 작업원 배열
-    workersPhoto: null,        // { file, composedBlob, blobUrl }
-    documentsPhoto: null,      // { file, composedBlob, blobUrl }
-    vehiclesByWorker: {},      // { 이름: { file, composedBlob, blobUrl } }
-    vehicleLoop: {
-      index: 0,
-      onDone: null
-    }
+    workers: [],
+    // 선택된 File 객체 배열
+    files: [],
+    // 썸네일 Blob URL 배열 (files 인덱스 대응)
+    thumbUrls: [],
+    // 슬롯 할당: { slotKey: fileIndex | 'skip' | null }
+    slotAssign: {},
+    // 합성 결과: { slotKey: { blob, blobUrl, filename } }
+    composed: {}
   };
 
-  // 다중 클릭 가드 — runSaveAndBand 동시 실행 방지
+  // 다중 클릭 가드
   var _saveInProgress = false;
+
+  // 현재 열려 있는 슬롯 모달 대상 slotKey
+  var _modalSlotKey = null;
 
   // -------------------------------------------------------
   // 상태 초기화 (Blob URL 회수 포함)
   // -------------------------------------------------------
   function resetState() {
-    if (_autoFillState.workersPhoto && _autoFillState.workersPhoto.blobUrl) {
-      URL.revokeObjectURL(_autoFillState.workersPhoto.blobUrl);
-    }
-    if (_autoFillState.documentsPhoto && _autoFillState.documentsPhoto.blobUrl) {
-      URL.revokeObjectURL(_autoFillState.documentsPhoto.blobUrl);
-    }
-    Object.keys(_autoFillState.vehiclesByWorker).forEach(function (name) {
-      var v = _autoFillState.vehiclesByWorker[name];
-      if (v && v.blobUrl) URL.revokeObjectURL(v.blobUrl);
+    // 썸네일 URL 회수
+    _state.thumbUrls.forEach(function (u) { if (u) URL.revokeObjectURL(u); });
+    // 합성 결과 URL 회수
+    Object.keys(_state.composed).forEach(function (k) {
+      var c = _state.composed[k];
+      if (c && c.blobUrl) URL.revokeObjectURL(c.blobUrl);
     });
 
-    _autoFillState.active = false;
-    _autoFillState.step = 0;
-    _autoFillState.workers = [];
-    _autoFillState.workersPhoto = null;
-    _autoFillState.documentsPhoto = null;
-    _autoFillState.vehiclesByWorker = {};
-    _autoFillState.vehicleLoop = { index: 0, onDone: null };
+    _state.active = false;
+    _state.workers = [];
+    _state.files = [];
+    _state.thumbUrls = [];
+    _state.slotAssign = {};
+    _state.composed = {};
+    _modalSlotKey = null;
 
-    hidePrompt();
+    hideSlotUI();
     hidePreviewGrid();
 
-    // btn-save-band 비활성화
     var saveBandBtn = getEl('btn-save-band');
     if (saveBandBtn) saveBandBtn.disabled = true;
+
+    var openBandBtn = getEl('btn-open-band');
+    if (openBandBtn) openBandBtn.style.display = 'none';
   }
 
   // -------------------------------------------------------
@@ -65,65 +71,192 @@
   // -------------------------------------------------------
   function getEl(id) { return document.getElementById(id); }
 
-  function showPrompt(text, onPick, onSkip) {
-    getEl('autofill-prompt-text').textContent = text;
-    getEl('autofill-prompt').style.display = 'block';
-    getEl('btn-autofill-pick')._handler = onPick;
-    getEl('btn-autofill-skip')._handler = onSkip;
+  function hideSlotUI() {
+    var ui = getEl('slot-assign-ui');
+    if (ui) ui.style.display = 'none';
   }
 
-  function hidePrompt() {
-    getEl('autofill-prompt').style.display = 'none';
+  function showSlotUI() {
+    var ui = getEl('slot-assign-ui');
+    if (ui) ui.style.display = 'block';
   }
 
   function hidePreviewGrid() {
-    getEl('preview-grid').style.display = 'none';
+    var grid = getEl('preview-grid');
+    if (grid) grid.style.display = 'none';
   }
 
   // -------------------------------------------------------
-  // 파일 입력 트리거 (promise 반환)
-  //   onPick 클릭 → 지정된 input 열기
-  //   파일 선택 완료(change) → resolve(file)
-  //   건너뛰기 클릭 → resolve(null)
+  // 슬롯 키 목록 생성
+  //   '__workers__', '__documents__', '{이름}__vehicle__'
   // -------------------------------------------------------
-  function promptFileInput(promptText, inputId) {
-    return new Promise(function (resolve) {
-      var input = getEl(inputId);
+  function buildSlotKeys(workers) {
+    var keys = ['__workers__', '__documents__'];
+    workers.forEach(function (name) {
+      keys.push(name + '__vehicle__');
+    });
+    return keys;
+  }
 
-      // 이전 핸들러 해제 (중복 방지)
-      var prevHandler = input._autoHandler;
-      if (prevHandler) input.removeEventListener('change', prevHandler);
+  function slotLabel(slotKey, workers) {
+    if (slotKey === '__workers__') return '작업원 사진';
+    if (slotKey === '__documents__') return '서류 사진';
+    var m = slotKey.match(/^(.+)__vehicle__$/);
+    if (m) return m[1] + ' 차대비';
+    return slotKey;
+  }
 
-      function onChange(e) {
-        input.removeEventListener('change', onChange);
-        input._autoHandler = null;
-        var file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-        input.value = '';
-        hidePrompt();
-        resolve(file);
+  // -------------------------------------------------------
+  // 썸네일 그리드 렌더 (선택 가능 그리드 — 슬롯 할당 모달용)
+  // -------------------------------------------------------
+  function renderThumbGrid(containerId, onSelect, selectedIndex) {
+    var container = getEl(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+
+    _state.files.forEach(function (file, idx) {
+      var wrap = document.createElement('div');
+      wrap.className = 'slot-thumb-item' + (idx === selectedIndex ? ' slot-thumb-item--selected' : '');
+
+      var img = document.createElement('img');
+      img.className = 'slot-thumb-img';
+      img.alt = '사진 ' + (idx + 1);
+      if (_state.thumbUrls[idx]) {
+        img.src = _state.thumbUrls[idx];
       }
 
-      input.addEventListener('change', onChange);
-      input._autoHandler = onChange;
+      var num = document.createElement('span');
+      num.className = 'slot-thumb-num';
+      num.textContent = idx + 1;
 
-      showPrompt(
-        promptText,
-        function onPick() {
-          input.click();
-        },
-        function onSkip() {
-          input.removeEventListener('change', onChange);
-          input._autoHandler = null;
-          input.value = '';
-          hidePrompt();
-          resolve(null);
-        }
-      );
+      wrap.appendChild(img);
+      wrap.appendChild(num);
+
+      wrap.addEventListener('click', function () {
+        onSelect(idx);
+      });
+
+      container.appendChild(wrap);
     });
   }
 
   // -------------------------------------------------------
-  // 단계 1: 공통필드 자동 채우기
+  // 슬롯 할당 UI 렌더
+  // -------------------------------------------------------
+  function renderSlotList() {
+    var workers = _state.workers;
+    var slotKeys = buildSlotKeys(workers);
+    var container = getEl('slot-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    slotKeys.forEach(function (slotKey) {
+      var label = slotLabel(slotKey, workers);
+      var assigned = _state.slotAssign[slotKey];
+
+      var row = document.createElement('div');
+      row.className = 'slot-row';
+      row.setAttribute('data-slot', slotKey);
+
+      var labelEl = document.createElement('span');
+      labelEl.className = 'slot-row__label';
+      labelEl.textContent = label;
+
+      var preview = document.createElement('div');
+      preview.className = 'slot-row__preview';
+
+      if (assigned === 'skip') {
+        preview.innerHTML = '<span class="slot-skip-badge">건너뜀</span>';
+      } else if (typeof assigned === 'number' && _state.thumbUrls[assigned]) {
+        var previewImg = document.createElement('img');
+        previewImg.className = 'slot-row__thumb';
+        previewImg.src = _state.thumbUrls[assigned];
+        previewImg.alt = label + ' 선택됨';
+        preview.appendChild(previewImg);
+      } else {
+        preview.innerHTML = '<span class="slot-empty-hint">미배정</span>';
+      }
+
+      var pickBtn = document.createElement('button');
+      pickBtn.className = 'btn-secondary btn-sm';
+      pickBtn.type = 'button';
+      pickBtn.textContent = '사진 선택';
+      pickBtn.addEventListener('click', (function (key) {
+        return function () { openSlotModal(key); };
+      })(slotKey));
+
+      var skipBtn = document.createElement('button');
+      skipBtn.className = 'btn-secondary btn-sm';
+      skipBtn.type = 'button';
+      skipBtn.textContent = '건너뛰기';
+      skipBtn.addEventListener('click', (function (key) {
+        return function () {
+          _state.slotAssign[key] = 'skip';
+          renderSlotList();
+          updateComposePreviewBtn();
+        };
+      })(slotKey));
+
+      var actions = document.createElement('div');
+      actions.className = 'slot-row__actions';
+      actions.appendChild(pickBtn);
+      actions.appendChild(skipBtn);
+
+      row.appendChild(labelEl);
+      row.appendChild(preview);
+      row.appendChild(actions);
+      container.appendChild(row);
+    });
+  }
+
+  // -------------------------------------------------------
+  // 슬롯 모달 열기/닫기
+  // -------------------------------------------------------
+  function openSlotModal(slotKey) {
+    _modalSlotKey = slotKey;
+    var workers = _state.workers;
+    var label = slotLabel(slotKey, workers);
+    var titleEl = getEl('slot-modal-title');
+    if (titleEl) titleEl.textContent = label + ' — 사진 선택';
+
+    var currentAssign = _state.slotAssign[slotKey];
+    var currentIdx = (typeof currentAssign === 'number') ? currentAssign : -1;
+
+    renderThumbGrid('slot-modal-thumb-grid', function (idx) {
+      _state.slotAssign[_modalSlotKey] = idx;
+      closeSlotModal();
+      renderSlotList();
+      updateComposePreviewBtn();
+    }, currentIdx);
+
+    var backdrop = getEl('slot-modal-backdrop');
+    if (backdrop) backdrop.style.display = 'flex';
+  }
+
+  function closeSlotModal() {
+    _modalSlotKey = null;
+    var backdrop = getEl('slot-modal-backdrop');
+    if (backdrop) backdrop.style.display = 'none';
+  }
+
+  // -------------------------------------------------------
+  // "합성 미리보기" 버튼 활성 조건 체크
+  //   모든 슬롯이 할당(number) 또는 skip 이면 활성화
+  // -------------------------------------------------------
+  function updateComposePreviewBtn() {
+    var btn = getEl('btn-compose-preview');
+    if (!btn) return;
+    var workers = _state.workers;
+    var slotKeys = buildSlotKeys(workers);
+    var allDecided = slotKeys.every(function (k) {
+      var v = _state.slotAssign[k];
+      return typeof v === 'number' || v === 'skip';
+    });
+    btn.disabled = !allDecided;
+  }
+
+  // -------------------------------------------------------
+  // 단계 1: 공통필드 자동 채우기 (Phase C 유지)
   // -------------------------------------------------------
   function step1CommonFields(projectName, workers) {
     return new Promise(function (resolve) {
@@ -133,7 +266,6 @@
       );
 
       if (matched) {
-        // 매치: 프리필 + 배너 표시
         getEl('office').value = matched.office || '마포용산지사';
         getEl('workplace').value = matched.workplace || '';
         Storage.setLastSelected({
@@ -147,7 +279,6 @@
         return;
       }
 
-      // 매치 없음: GPS 시도
       if (!navigator.geolocation) {
         alert('작업장소를 수동 입력하세요.');
         resolve();
@@ -196,89 +327,125 @@
   }
 
   // -------------------------------------------------------
-  // 단계 2: 작업원 사진 선택
+  // 단계 2: 멀티셀렉트 (1회)
   // -------------------------------------------------------
-  function step2WorkersPhoto() {
-    return promptFileInput('작업원 사진 고르세요', 'auto-file-workers')
-      .then(function (file) {
-        _autoFillState.workersPhoto = file ? { file: file, composedBlob: null, blobUrl: null } : null;
-      });
-  }
-
-  // -------------------------------------------------------
-  // 단계 3: 서류 사진 선택
-  // -------------------------------------------------------
-  function step3DocumentsPhoto() {
-    return promptFileInput('서류 사진 고르세요', 'auto-file-documents')
-      .then(function (file) {
-        _autoFillState.documentsPhoto = file ? { file: file, composedBlob: null, blobUrl: null } : null;
-      });
-  }
-
-  // -------------------------------------------------------
-  // 단계 4: 차대비 사진 (작업원별 루프)
-  // -------------------------------------------------------
-  function step4VehiclesLoop(workers) {
+  function step2MultiSelect() {
     return new Promise(function (resolve) {
-      var results = {};
+      var input = getEl('auto-file-multi');
+      if (!input) { resolve([]); return; }
 
-      function processNext(idx) {
-        if (idx >= workers.length) {
-          _autoFillState.vehiclesByWorker = results;
-          resolve();
-          return;
-        }
-
-        var name = workers[idx];
-        promptFileInput(name + ' 차대비 사진 고르세요', 'auto-file-vehicle')
-          .then(function (file) {
-            results[name] = file ? { file: file, composedBlob: null, blobUrl: null } : null;
-            processNext(idx + 1);
-          });
+      // 이전 핸들러 해제
+      if (input._autoHandler) {
+        input.removeEventListener('change', input._autoHandler);
+        input._autoHandler = null;
       }
 
-      processNext(0);
+      function onChange(e) {
+        input.removeEventListener('change', onChange);
+        input._autoHandler = null;
+        var files = e.target.files ? Array.prototype.slice.call(e.target.files) : [];
+        input.value = '';
+        resolve(files);
+      }
+
+      input.addEventListener('change', onChange);
+      input._autoHandler = onChange;
+      input.click();
     });
   }
 
   // -------------------------------------------------------
-  // 단계 5: 합성 미리보기
+  // 썸네일 Blob URL 생성 (createObjectURL)
   // -------------------------------------------------------
-  function step5Compose(projectName, workers) {
+  function buildThumbUrls(files) {
+    return files.map(function (file) {
+      return URL.createObjectURL(file);
+    });
+  }
+
+  // -------------------------------------------------------
+  // 단계 3: 슬롯 할당 UI 표시
+  // -------------------------------------------------------
+  function step3SlotAssignUI() {
+    var workers = _state.workers;
+    var slotKeys = buildSlotKeys(workers);
+
+    // 초기 슬롯 상태 설정
+    _state.slotAssign = {};
+    slotKeys.forEach(function (k) { _state.slotAssign[k] = null; });
+
+    // 썸네일 그리드 렌더 (표시 전용, 클릭 없음)
+    renderThumbGridDisplay();
+    // 슬롯 목록 렌더
+    renderSlotList();
+    updateComposePreviewBtn();
+    showSlotUI();
+  }
+
+  // 상단 썸네일 그리드 (표시 전용)
+  function renderThumbGridDisplay() {
+    var container = getEl('slot-thumb-grid');
+    if (!container) return;
+    container.innerHTML = '';
+
+    _state.files.forEach(function (file, idx) {
+      var wrap = document.createElement('div');
+      wrap.className = 'slot-thumb-item';
+
+      var img = document.createElement('img');
+      img.className = 'slot-thumb-img';
+      img.alt = '사진 ' + (idx + 1);
+      if (_state.thumbUrls[idx]) img.src = _state.thumbUrls[idx];
+
+      var num = document.createElement('span');
+      num.className = 'slot-thumb-num';
+      num.textContent = idx + 1;
+
+      wrap.appendChild(img);
+      wrap.appendChild(num);
+      container.appendChild(wrap);
+    });
+  }
+
+  // -------------------------------------------------------
+  // 단계 4: 합성
+  // -------------------------------------------------------
+  function step4Compose(projectName) {
+    var workers = _state.workers;
     var allWorkerStr = workers.join(' ');
-    var boardData = window.AppMain.collectBoardData(allWorkerStr);
 
     var tasks = [];
+    var dateStr = (getEl('field-date') || {}).value || '';
 
-    if (_autoFillState.workersPhoto) {
-      tasks.push({
-        key: '__workers__',
-        label: '작업원 사진',
-        file: _autoFillState.workersPhoto.file,
-        boardData: boardData
-      });
-    }
+    Object.keys(_state.slotAssign).forEach(function (slotKey) {
+      var assigned = _state.slotAssign[slotKey];
+      if (assigned === 'skip' || assigned === null) return;
+      if (typeof assigned !== 'number') return;
 
-    if (_autoFillState.documentsPhoto) {
-      tasks.push({
-        key: '__documents__',
-        label: '서류 사진',
-        file: _autoFillState.documentsPhoto.file,
-        boardData: boardData
-      });
-    }
+      var file = _state.files[assigned];
+      if (!file) return;
 
-    workers.forEach(function (name) {
-      var v = _autoFillState.vehiclesByWorker[name];
-      if (v && v.file) {
-        var vBoardData = window.AppMain.collectBoardData(name);
-        tasks.push({
-          key: name,
-          label: name + ' 차대비',
-          file: v.file,
-          boardData: vBoardData
-        });
+      var boardData;
+      var label;
+      var filename;
+
+      if (slotKey === '__workers__') {
+        boardData = window.AppMain.collectBoardData(allWorkerStr);
+        label = '작업원 사진';
+        filename = buildFilename(dateStr, '작업자', 1);
+      } else if (slotKey === '__documents__') {
+        boardData = window.AppMain.collectBoardData(allWorkerStr);
+        label = '서류 사진';
+        filename = buildFilename(dateStr, '서류', 1);
+      } else {
+        var m = slotKey.match(/^(.+)__vehicle__$/);
+        var workerName = m ? m[1] : slotKey;
+        boardData = window.AppMain.collectBoardData(workerName);
+        label = workerName + ' 차대비';
+        filename = buildFilename(dateStr, '차대비', workerName);
       }
+
+      tasks.push({ slotKey: slotKey, file: file, boardData: boardData, label: label, filename: filename });
     });
 
     if (tasks.length === 0) {
@@ -288,24 +455,21 @@
 
     var promises = tasks.map(function (t) {
       return Compose.compose(t.file, t.boardData).then(function (blob) {
-        return { key: t.key, label: t.label, blob: blob };
+        return { slotKey: t.slotKey, label: t.label, blob: blob, filename: t.filename };
       });
     });
 
     return Promise.all(promises).then(function (results) {
-      // composedBlob / blobUrl 저장
+      // 이전 합성 결과 URL 회수
+      Object.keys(_state.composed).forEach(function (k) {
+        var c = _state.composed[k];
+        if (c && c.blobUrl) URL.revokeObjectURL(c.blobUrl);
+      });
+      _state.composed = {};
+
       results.forEach(function (r) {
         var url = URL.createObjectURL(r.blob);
-        if (r.key === '__workers__' && _autoFillState.workersPhoto) {
-          _autoFillState.workersPhoto.composedBlob = r.blob;
-          _autoFillState.workersPhoto.blobUrl = url;
-        } else if (r.key === '__documents__' && _autoFillState.documentsPhoto) {
-          _autoFillState.documentsPhoto.composedBlob = r.blob;
-          _autoFillState.documentsPhoto.blobUrl = url;
-        } else if (_autoFillState.vehiclesByWorker[r.key]) {
-          _autoFillState.vehiclesByWorker[r.key].composedBlob = r.blob;
-          _autoFillState.vehiclesByWorker[r.key].blobUrl = url;
-        }
+        _state.composed[r.slotKey] = { blob: r.blob, blobUrl: url, filename: r.filename };
       });
 
       renderPreviewGrid(results);
@@ -334,36 +498,14 @@
       label.className = 'preview-grid-item__label';
       label.textContent = r.label;
 
-      var rePickBtn = document.createElement('button');
-      rePickBtn.className = 'btn-secondary btn-sm';
-      rePickBtn.textContent = '다시 선택';
-      rePickBtn.type = 'button';
-
-      // 다시 선택: 해당 항목만 재실행
-      (function (key, label) {
-        rePickBtn.addEventListener('click', function () {
-          rePickSingle(key, label);
-        });
-      })(r.key, r.label);
-
       header.appendChild(label);
-      header.appendChild(rePickBtn);
 
       var img = document.createElement('img');
       img.className = 'preview-grid-item__img';
       img.alt = r.label + ' 합성 결과';
 
-      // blobUrl 찾기
-      var url = null;
-      if (r.key === '__workers__' && _autoFillState.workersPhoto) {
-        url = _autoFillState.workersPhoto.blobUrl;
-      } else if (r.key === '__documents__' && _autoFillState.documentsPhoto) {
-        url = _autoFillState.documentsPhoto.blobUrl;
-      } else if (_autoFillState.vehiclesByWorker[r.key]) {
-        url = _autoFillState.vehiclesByWorker[r.key].blobUrl;
-      }
-
-      if (url) img.src = url;
+      var composed = _state.composed[r.slotKey];
+      if (composed && composed.blobUrl) img.src = composed.blobUrl;
 
       div.appendChild(header);
       div.appendChild(img);
@@ -380,86 +522,14 @@
   }
 
   // -------------------------------------------------------
-  // 개별 재선택
-  // -------------------------------------------------------
-  function rePickSingle(key, label) {
-    var inputId;
-    var workerName = null;
-
-    if (key === '__workers__') {
-      inputId = 'auto-file-workers';
-    } else if (key === '__documents__') {
-      inputId = 'auto-file-documents';
-    } else {
-      inputId = 'auto-file-vehicle';
-      workerName = key;
-    }
-
-    promptFileInput(label + ' 사진 다시 고르세요', inputId).then(function (file) {
-      if (!file) return; // 건너뛰기 시 기존 유지
-
-      var workers = _autoFillState.workers;
-      var allWorkerStr = workers.join(' ');
-
-      var boardData;
-      if (key === '__workers__' || key === '__documents__') {
-        boardData = window.AppMain.collectBoardData(allWorkerStr);
-      } else {
-        boardData = window.AppMain.collectBoardData(workerName);
-      }
-
-      Compose.compose(file, boardData).then(function (blob) {
-        var newUrl = URL.createObjectURL(blob);
-
-        // 기존 URL 해제
-        if (key === '__workers__' && _autoFillState.workersPhoto) {
-          if (_autoFillState.workersPhoto.blobUrl) URL.revokeObjectURL(_autoFillState.workersPhoto.blobUrl);
-          _autoFillState.workersPhoto = { file: file, composedBlob: blob, blobUrl: newUrl };
-        } else if (key === '__documents__' && _autoFillState.documentsPhoto) {
-          if (_autoFillState.documentsPhoto.blobUrl) URL.revokeObjectURL(_autoFillState.documentsPhoto.blobUrl);
-          _autoFillState.documentsPhoto = { file: file, composedBlob: blob, blobUrl: newUrl };
-        } else if (_autoFillState.vehiclesByWorker[key]) {
-          if (_autoFillState.vehiclesByWorker[key].blobUrl) URL.revokeObjectURL(_autoFillState.vehiclesByWorker[key].blobUrl);
-          _autoFillState.vehiclesByWorker[key] = { file: file, composedBlob: blob, blobUrl: newUrl };
-        }
-
-        // 해당 그리드 아이템의 img 갱신
-        updateGridItemImage(key, newUrl);
-      }).catch(function (err) {
-        alert('합성 오류: ' + err.message);
-      });
-    });
-  }
-
-  function updateGridItemImage(key, url) {
-    var items = getEl('preview-grid-items').querySelectorAll('.preview-grid-item');
-    var labels = {
-      '__workers__': '작업원 사진',
-      '__documents__': '서류 사진'
-    };
-    var targetLabel = labels[key] || (key + ' 차대비');
-
-    for (var i = 0; i < items.length; i++) {
-      var labelEl = items[i].querySelector('.preview-grid-item__label');
-      if (labelEl && labelEl.textContent === targetLabel) {
-        var img = items[i].querySelector('.preview-grid-item__img');
-        if (img) img.src = url;
-        break;
-      }
-    }
-  }
-
-  // -------------------------------------------------------
   // 메인 플로우
   // -------------------------------------------------------
   function runAutofill() {
-    // 재클릭 시 기존 상태 확인
-    if (_autoFillState.active) {
+    if (_state.active) {
       if (!confirm('진행 중인 자동 입히기를 초기화하시겠습니까?')) return;
       resetState();
     }
 
-    // 선행 조건: 공사명 + 작업원 최소 1개 선택
     var projectName = (getEl('project-name') || {}).value || '';
     var workers = window.AppMain.getSelectedWorkers();
 
@@ -472,83 +542,85 @@
       return;
     }
 
-    _autoFillState.active = true;
-    _autoFillState.workers = workers.slice();
+    _state.active = true;
+    _state.workers = workers.slice();
 
     var btn = getEl('btn-autofill');
     btn.disabled = true;
     btn.textContent = '진행 중...';
 
-    // 단계 순차 실행
     step1CommonFields(projectName, workers)
       .then(function () {
-        _autoFillState.step = 2;
-        return step2WorkersPhoto();
+        return step2MultiSelect();
       })
-      .then(function () {
-        _autoFillState.step = 3;
-        return step3DocumentsPhoto();
-      })
-      .then(function () {
-        _autoFillState.step = 4;
-        return step4VehiclesLoop(workers);
-      })
-      .then(function () {
-        _autoFillState.step = 5;
-        return step5Compose(projectName, workers);
-      })
-      .then(function () {
+      .then(function (files) {
+        if (!files || files.length === 0) {
+          // 사진 미선택 → 중단
+          btn.disabled = false;
+          btn.textContent = '자동 입히기';
+          _state.active = false;
+          return;
+        }
+        _state.files = files;
+        _state.thumbUrls = buildThumbUrls(files);
+        step3SlotAssignUI();
+
         btn.disabled = false;
         btn.textContent = '자동 입히기';
-        _autoFillState.active = false;
+        _state.active = false;
       })
       .catch(function (err) {
         console.error('autofill error:', err);
         btn.disabled = false;
         btn.textContent = '자동 입히기';
-        _autoFillState.active = false;
+        _state.active = false;
         alert('자동 입히기 중 오류가 발생했습니다: ' + err.message);
       });
   }
 
   // -------------------------------------------------------
-  // Phase D: btn-save-band 활성/비활성 업데이트
+  // 합성 미리보기 실행 (btn-compose-preview 클릭)
+  // -------------------------------------------------------
+  function runComposePreview() {
+    var projectName = (getEl('project-name') || {}).value || '';
+    var workers = _state.workers;
+
+    hideSlotUI();
+
+    step4Compose(projectName).catch(function (err) {
+      console.error('compose error:', err);
+      alert('합성 중 오류가 발생했습니다: ' + err.message);
+    });
+  }
+
+  // -------------------------------------------------------
+  // Phase D 유지: btn-save-band 활성/비활성
   // -------------------------------------------------------
   function updateSaveBandBtn() {
     var btn = getEl('btn-save-band');
     if (!btn) return;
-    var hasComposed = hasSomethingComposed();
-    btn.disabled = !hasComposed;
+    btn.disabled = !hasSomethingComposed();
   }
 
   function hasSomethingComposed() {
-    if (_autoFillState.workersPhoto && _autoFillState.workersPhoto.composedBlob) return true;
-    if (_autoFillState.documentsPhoto && _autoFillState.documentsPhoto.composedBlob) return true;
-    var names = Object.keys(_autoFillState.vehiclesByWorker);
-    for (var i = 0; i < names.length; i++) {
-      var v = _autoFillState.vehiclesByWorker[names[i]];
-      if (v && v.composedBlob) return true;
-    }
-    return false;
+    return Object.keys(_state.composed).some(function (k) {
+      return _state.composed[k] && _state.composed[k].blob;
+    });
   }
 
   // -------------------------------------------------------
-  // Phase D: 파일명 생성 헬퍼
-  //   작업자 사진: board_YYYYMMDD_작업자_N.jpg
-  //   서류 사진:   board_YYYYMMDD_서류_N.jpg
-  //   차대비 사진: board_YYYYMMDD_차대비_{이름}.jpg
+  // Phase D 유지: 파일명 생성
   // -------------------------------------------------------
   function buildFilename(dateStr, type, suffix) {
     var datePart = (dateStr || '').replace(/\./g, '').replace(/\s+/g, '');
     if (!/^\d{8}$/.test(datePart)) {
-      // 폴백: 오늘 날짜 (YYYYMMDD)
       datePart = new Date().toISOString().split('T')[0].replace(/-/g, '');
     }
     return 'board_' + datePart + '_' + type + '_' + suffix + '.jpg';
   }
 
   // -------------------------------------------------------
-  // Phase D: 딥링크 트리거 (테스트용 훅 포함)
+  // Phase D 유지: 딥링크 트리거
   // -------------------------------------------------------
   function triggerDeepLink(url) {
     window.location.href = url;
@@ -559,7 +631,7 @@
   }
 
   // -------------------------------------------------------
-  // Phase D: 로컬 다운로드 (순차 지연)
+  // Phase D 유지: 로컬 다운로드 (순차 지연) — 폴백용
   // -------------------------------------------------------
   function downloadBlobs(items) {
     return new Promise(function (resolve) {
@@ -584,7 +656,7 @@
   }
 
   // -------------------------------------------------------
-  // Phase D: 밴드 앱 딥링크 + 폴백
+  // Phase D 유지: 밴드 앱 딥링크 + 폴백
   // -------------------------------------------------------
   function openBandApp() {
     var ua = navigator.userAgent || '';
@@ -597,49 +669,37 @@
     } else if (isAndroid) {
       deeplink = 'intent://share#Intent;package=com.nhn.android.band;scheme=band;end';
     } else {
-      // 데스크톱: 바로 폴백
       triggerFallback('https://band.us/');
       return;
     }
 
-    // visibilitychange로 앱 전환 감지 → 폴백 타이머 취소
     var fallbackTimer = null;
     var visHandler = null;
 
     function cancelFallback() {
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
-      }
-      if (visHandler) {
-        document.removeEventListener('visibilitychange', visHandler);
-        visHandler = null;
-      }
+      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler = null; }
     }
 
     visHandler = function () {
-      if (document.hidden) {
-        cancelFallback();
-      }
+      if (document.hidden) cancelFallback();
     };
     document.addEventListener('visibilitychange', visHandler);
 
-    // 800ms 후 앱 미설치 폴백
     fallbackTimer = setTimeout(function () {
       cancelFallback();
       triggerFallback('https://band.us/');
     }, 800);
 
-    // 딥링크 실행
     triggerDeepLink(deeplink);
   }
 
   // -------------------------------------------------------
-  // Phase D: 세션 기록
+  // Phase D 유지: 세션 기록
   // -------------------------------------------------------
   function recordSession() {
     var projectName = (getEl('project-name') || {}).value || '';
-    var workers = _autoFillState.workers.slice().sort();
+    var workers = _state.workers.slice().sort();
     var office = (getEl('office') || {}).value || '마포용산지사';
     var workplace = ((getEl('workplace') || {}).value || '').trim();
     var state = Storage.getState();
@@ -656,7 +716,7 @@
   }
 
   // -------------------------------------------------------
-  // Phase D: 저장 + 밴드 열기 메인 로직
+  // Phase F: 저장 + 밴드 열기 (Web Share 우선)
   // -------------------------------------------------------
   function runSaveAndBand() {
     if (_saveInProgress) return;
@@ -665,58 +725,63 @@
 
     var dateStr = (getEl('field-date') || {}).value || '';
     var items = [];
-    var workerCount = 0;
-    var docCount = 0;
 
-    if (_autoFillState.workersPhoto && _autoFillState.workersPhoto.composedBlob) {
-      workerCount++;
-      items.push({
-        blob: _autoFillState.workersPhoto.composedBlob,
-        filename: buildFilename(dateStr, '작업자', workerCount)
-      });
-    }
-
-    if (_autoFillState.documentsPhoto && _autoFillState.documentsPhoto.composedBlob) {
-      docCount++;
-      items.push({
-        blob: _autoFillState.documentsPhoto.composedBlob,
-        filename: buildFilename(dateStr, '서류', docCount)
-      });
-    }
-
-    var orderedWorkers = (_autoFillState.workers || []).slice().sort();
-    orderedWorkers.forEach(function (name) {
-      var v = _autoFillState.vehiclesByWorker[name];
-      if (v && v.composedBlob) {
-        items.push({
-          blob: v.composedBlob,
-          filename: buildFilename(dateStr, '차대비', name)
-        });
+    Object.keys(_state.composed).forEach(function (slotKey) {
+      var c = _state.composed[slotKey];
+      if (c && c.blob) {
+        items.push({ blob: c.blob, filename: c.filename });
       }
     });
 
     if (items.length === 0) { _saveInProgress = false; return; }
 
-    // 버튼 일시 비활성
     var btn = getEl('btn-save-band');
     if (btn) btn.disabled = true;
 
-    downloadBlobs(items)
-      .then(function () {
-        // 세션 기록 (D-5)
+    // Web Share API 시도
+    var shareFiles = items.map(function (item) {
+      return new File([item.blob], item.filename, { type: 'image/jpeg' });
+    });
+
+    var useWebShare = (
+      typeof navigator.canShare === 'function' &&
+      navigator.canShare({ files: shareFiles })
+    );
+
+    if (useWebShare) {
+      navigator.share({
+        files: shareFiles,
+        title: '동산보드판'
+      }).then(function () {
         recordSession();
-        // 밴드 딥링크
-        openBandApp();
-      })
-      .catch(function (err) {
-        console.error('save+band error:', err);
-        alert('저장 중 오류가 발생했습니다: ' + err.message);
-      })
-      .then(function () {
-        // then(성공/실패 모두) — finally 미지원 환경 대비
+        // "밴드 열기" 버튼 노출
+        var openBandBtn = getEl('btn-open-band');
+        if (openBandBtn) openBandBtn.style.display = 'block';
+      }).catch(function (err) {
+        // AbortError: 사용자 취소 — 정상
+        if (err && err.name !== 'AbortError') {
+          console.error('share error:', err);
+        }
+      }).then(function () {
         if (btn) btn.disabled = false;
         _saveInProgress = false;
       });
+    } else {
+      // 폴백: 다운로드
+      downloadBlobs(items)
+        .then(function () {
+          recordSession();
+          openBandApp();
+        })
+        .catch(function (err) {
+          console.error('save+band error:', err);
+          alert('저장 중 오류가 발생했습니다: ' + err.message);
+        })
+        .then(function () {
+          if (btn) btn.disabled = false;
+          _saveInProgress = false;
+        });
+    }
   }
 
   // -------------------------------------------------------
@@ -724,33 +789,31 @@
   // -------------------------------------------------------
   function bindEvents() {
     var autofillBtn = getEl('btn-autofill');
-    if (autofillBtn) {
-      autofillBtn.addEventListener('click', runAutofill);
-    }
+    if (autofillBtn) autofillBtn.addEventListener('click', runAutofill);
 
-    var pickBtn = getEl('btn-autofill-pick');
-    if (pickBtn) {
-      pickBtn.addEventListener('click', function () {
-        if (typeof pickBtn._handler === 'function') pickBtn._handler();
-      });
-    }
+    var composePreviewBtn = getEl('btn-compose-preview');
+    if (composePreviewBtn) composePreviewBtn.addEventListener('click', runComposePreview);
 
-    var skipBtn = getEl('btn-autofill-skip');
-    if (skipBtn) {
-      skipBtn.addEventListener('click', function () {
-        if (typeof skipBtn._handler === 'function') skipBtn._handler();
-      });
-    }
-
-    // "저장 + 밴드 열기" — Phase D 실제 동작
     var saveBandBtn = getEl('btn-save-band');
-    if (saveBandBtn) {
-      saveBandBtn.addEventListener('click', runSaveAndBand);
+    if (saveBandBtn) saveBandBtn.addEventListener('click', runSaveAndBand);
+
+    var openBandBtn = getEl('btn-open-band');
+    if (openBandBtn) openBandBtn.addEventListener('click', function () { openBandApp(); });
+
+    var modalCancelBtn = getEl('btn-slot-modal-cancel');
+    if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeSlotModal);
+
+    // 모달 백드롭 탭으로 닫기
+    var backdrop = getEl('slot-modal-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) closeSlotModal();
+      });
     }
   }
 
   // -------------------------------------------------------
-  // 초기화 (DOMContentLoaded 이후 app.js의 setup 완료 시점에 맞춤)
+  // 초기화
   // -------------------------------------------------------
   function init() {
     bindEvents();
@@ -762,12 +825,12 @@
     init();
   }
 
-  // 외부 노출 (스모크 테스트용)
+  // 외부 노출 (스모크 테스트용 — Phase D 호환 유지)
   window.AutoFill = {
-    _state: _autoFillState,
+    _state: _state,
     runAutofill: runAutofill,
     resetState: resetState,
-    // Phase D 테스트 훅 — smoke에서 스텁 가능
+    // Phase D 테스트 훅
     _triggerDeepLink: function (url) { triggerDeepLink(url); },
     _triggerFallback: function (url) { triggerFallback(url); },
     _hasSomethingComposed: hasSomethingComposed,

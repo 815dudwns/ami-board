@@ -172,7 +172,7 @@
     }
 
     chadaebiWorkers.forEach(function (name) {
-      slots.push({ role: 'chadaebi', label: name + ' 차대비', workerName: name });
+      slots.push({ role: 'chadaebi', label: name + ' 차량사진', workerName: name });
     });
 
     return slots;
@@ -188,7 +188,7 @@
     }
     var existingChadaebi = _state.slots.filter(function (s) { return s.role === 'chadaebi'; });
     var n = existingChadaebi.length + 1;
-    _state.slots.push({ role: 'chadaebi', label: '차대비 ' + n, workerName: null });
+    _state.slots.push({ role: 'chadaebi', label: '차량사진 ' + n, workerName: null });
     _state.photos.push(null);
     renderCards();
   }
@@ -295,6 +295,11 @@
         animation: 150,
         filter: '.slot-remove-btn',
         preventOnFilter: false,
+        forceFallback: true,
+        fallbackTolerance: 3,
+        touchStartThreshold: 3,
+        delay: 80,
+        delayOnTouchOnly: true,
         onEnd: function (evt) {
           if (evt.oldIndex === evt.newIndex) return;
           // photos만 재정렬 (slots 고정)
@@ -571,7 +576,7 @@
       while (_state.slots.length < _state.photos.length && _state.slots.length < MAX_SLOTS) {
         var existingChadaebi = _state.slots.filter(function (s) { return s.role === 'chadaebi'; });
         var n = existingChadaebi.length + 1;
-        _state.slots.push({ role: 'chadaebi', label: '차대비 ' + n, workerName: null });
+        _state.slots.push({ role: 'chadaebi', label: '차량사진 ' + n, workerName: null });
       }
     }
 
@@ -615,7 +620,7 @@
         var workerName = slot.workerName || slot.label;
         boardData = window.AppMain.collectBoardData(workerName);
         label = slot.label;
-        filename = buildFilename(dateStr, '차대비', workerName);
+        filename = buildFilename(dateStr, '차량사진', workerName);
       }
 
       tasks.push({ idx: idx, file: file, boardData: boardData, label: label, filename: filename });

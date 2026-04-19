@@ -670,7 +670,7 @@
     var img = document.createElement('img');
     img.src = item.blobUrl;
     img.className = 'thumb';
-    img.alt = '차대비 사진 ' + (idx + 1);
+    img.alt = '차량사진 ' + (idx + 1);
 
     var tagInput = document.createElement('input');
     tagInput.type = 'text';
@@ -744,7 +744,7 @@
         tasks.push({
           file: v.file,
           boardData: collectBoardData(v.tag || ''),
-          label: '차대비 ' + (i + 1),
+          label: '차량사진 ' + (i + 1),
           section: 'vehicles',
           index: i
         });

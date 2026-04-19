@@ -265,11 +265,11 @@
     }
   }
 
-  // 현재 토글 값 읽기 → "작업전안전회의 오전" 또는 "작업전안전회의 오후"
+  // 현재 토글 값 읽기 → "작업전안전회의(오전)" 또는 "작업전안전회의(오후)"
   function getContentValue() {
     var amBtn = document.getElementById('btn-content-am');
     var period = (amBtn && amBtn.getAttribute('aria-pressed') === 'true') ? '오전' : '오후';
-    return '작업전안전회의 ' + period;
+    return '작업전안전회의(' + period + ')';
   }
 
   // -------------------------------------------------------

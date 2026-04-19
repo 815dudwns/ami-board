@@ -96,9 +96,6 @@ var Compose = (function () {
     // 긴 쪽(longerSide) 기준으로 비율 계산
     var longerSide = Math.max(imgW, imgH);
 
-    // 표 너비: 이미지 너비의 55%
-    var tableW = Math.round(imgW * 0.55);
-
     // 폰트/패딩/행 높이: longerSide 비율 → 최소 픽셀 보장
     var fontSize      = Math.max(10, Math.round(RATIO_FONT       * longerSide));
     var labelFontSize = Math.max(9,  Math.round(RATIO_LABEL_FONT * longerSide));
@@ -106,7 +103,27 @@ var Compose = (function () {
     var rowH          = Math.max(20, Math.round(RATIO_ROW_H      * longerSide));
     var margin        = Math.max(8,  Math.round(RATIO_MARGIN     * longerSide));
 
-    var labelColW = Math.round(tableW * 0.28);
+    // 가변 폭: 모든 행의 라벨/값 측정 후 최대값으로 tableW 결정
+    ctx.font = 'bold ' + labelFontSize + 'px ' + FONT_FAMILY;
+    var maxLabelW = 0;
+    TABLE_ROWS.forEach(function (row) {
+      var w = ctx.measureText(row.label).width;
+      if (w > maxLabelW) maxLabelW = w;
+    });
+    var labelColW = Math.round(maxLabelW + padding * 2);
+
+    ctx.font = fontSize + 'px ' + FONT_FAMILY;
+    var maxValueW = 0;
+    TABLE_ROWS.forEach(function (row) {
+      var value = (data[row.key] || '').toString();
+      var w = ctx.measureText(value).width;
+      if (w > maxValueW) maxValueW = w;
+    });
+    var valueColW = Math.round(maxValueW + padding * 2);
+
+    // 95% 이미지 폭 상한
+    var maxTableW = Math.round(imgW * 0.95);
+    var tableW = Math.min(labelColW + valueColW, maxTableW);
 
     var tableH = rowH * TABLE_ROWS.length;
 
@@ -150,7 +167,7 @@ var Compose = (function () {
         rowY + rowH / 2
       );
 
-      // 값 (길면 잘라서 표시)
+      // 값 (상한 초과 시 truncate)
       ctx.font = fontSize + 'px ' + FONT_FAMILY;
       var maxValW = tableW - labelColW - padding * 2;
       var displayVal = truncateText(ctx, value, maxValW);

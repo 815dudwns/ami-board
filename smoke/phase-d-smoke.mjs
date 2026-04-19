@@ -248,62 +248,33 @@ async function runTests() {
     results['Scenario 5'] = uaAllOk ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 6: 800ms 폴백 타이머 동작 확인
+    // Scenario 6: iframe 방식 밴드 딥링크 + about:blank 없음 확인
     // =========================================================
-    console.log('\n=== Scenario 6: 800ms 폴백 타이머 ===');
+    console.log('\n=== Scenario 6: iframe 방식 딥링크 + about:blank 없음 ===');
 
-    const timerCheck = await page.evaluate(() => {
-      return new Promise(function (resolve) {
-        var timeoutCalls = [];
-        var origSetTimeout = window.setTimeout;
-        window.setTimeout = function (fn, delay) {
-          timeoutCalls.push(delay);
-          return origSetTimeout.call(window, fn, delay);
-        };
-
-        // openBandApp 로직 중 800ms setTimeout 호출 여부 확인
-        // triggerDeepLink 스텁
-        var origTrigger = window.AutoFill._triggerDeepLink;
-        var origFallback = window.AutoFill._triggerFallback;
-        window.AutoFill._triggerDeepLink = function () {};
-        window.AutoFill._triggerFallback = function () {};
-
-        // UA를 iOS로 설정해서 openBandApp 경로 실행
-        // 직접 코드 재현: 800ms 타이머가 있어야 함
-        // 실제 openBandApp은 외부 노출이 없으므로 인라인으로 검증
-        var has800 = false;
-        // 내부 구현에서 800ms setTimeout이 존재하는지 — openBandApp 포함 runSaveAndBand 없이
-        // _downloadBlobs에서 delay 축적 후 setTimeout(resolve, delay+100) 패턴도 검사
-        var items = [{ blob: new Blob(['x'], { type: 'image/jpeg' }), filename: 'test.jpg' }];
-        window.AutoFill._downloadBlobs(items).then(function () {
-          // 800ms 타이머: openBandApp 내부에서 setTimeout(fallback, 800) 호출됨
-          // UA=iOS 상황 재현 (navigator.userAgent 직접 덮어쓰기 불가 → 스크립트 재현)
-          var fallbackCalled = false;
-          var t = origSetTimeout(function () { fallbackCalled = true; }, 800);
-          has800 = timeoutCalls.indexOf(800) !== -1 || true; // setTimeout(800)은 openBandApp에서 호출
-          clearTimeout(t);
-
-          window.setTimeout = origSetTimeout;
-          window.AutoFill._triggerDeepLink = origTrigger;
-          window.AutoFill._triggerFallback = origFallback;
-          resolve(has800);
-        });
-      });
-    });
-
-    // openBandApp 내부 800ms setTimeout 존재 여부 — 소스 grep으로 확인
-    let has800msInSource = false;
+    // 6a. 소스에 iframe bandapp:// 딥링크 존재 확인
+    let iframeDeeplinkInSource = false;
+    let noWindowOpenBlank = true;
     try {
-      const grep = execSync(
-        'grep -n "800" /Users/woodelight/Projects/ami-board/js/autofill.js',
+      const srcContent = execSync(
+        'cat /Users/woodelight/Projects/ami-board/js/autofill.js',
         { encoding: 'utf8' }
-      ).trim();
-      has800msInSource = grep.includes('800');
+      );
+      // iOS 경로: hidden iframe으로 bandapp:// 호출해야 함
+      iframeDeeplinkInSource = srcContent.includes("iframe.src = 'bandapp://'") ||
+                               srcContent.includes('iframe.src = "bandapp://"');
+      // window.open(..., '_blank') 이 없어야 함 (about:blank 방지)
+      noWindowOpenBlank = !srcContent.includes("window.open") ||
+                          !(srcContent.includes("'_blank'") || srcContent.includes('"_blank"'));
     } catch (e) {
-      has800msInSource = false;
+      iframeDeeplinkInSource = false;
+      noWindowOpenBlank = false;
     }
-    console.log('  6. 800ms 타이머 소스 존재:', has800msInSource ? 'PASS' : 'FAIL');
-    results['Scenario 6'] = has800msInSource ? 'PASS' : 'FAIL';
+
+    console.log('  6a. iframe bandapp:// 딥링크 소스 존재:', iframeDeeplinkInSource ? 'PASS' : 'FAIL');
+    console.log('  6b. window.open _blank 없음 (about:blank 방지):', noWindowOpenBlank ? 'PASS' : 'FAIL');
+
+    results['Scenario 6'] = (iframeDeeplinkInSource && noWindowOpenBlank) ? 'PASS' : 'FAIL';
 
     // =========================================================
     // Scenario 7: Web Share 게이트 확인 (Phase F)

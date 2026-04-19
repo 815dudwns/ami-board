@@ -77,9 +77,20 @@
     var openBandBtn = getEl('btn-open-band');
     if (openBandBtn) openBandBtn.style.display = 'none';
 
+    // 완전 초기화 버튼도 숨김
+    var fullResetBtn = getEl('btn-autofill-reset-full');
+    if (fullResetBtn) fullResetBtn.style.display = 'none';
+
     // Tier 3: 수동 취소 버튼 숨김
     var cancelBtn = getEl('btn-autofill-cancel');
     if (cancelBtn) cancelBtn.style.display = 'none';
+
+    // 자동 입히기 버튼 복구
+    var autofillBtn = getEl('btn-autofill');
+    if (autofillBtn) {
+      autofillBtn.disabled = false;
+      autofillBtn.textContent = '자동 입히기';
+    }
   }
 
   // -------------------------------------------------------
@@ -807,7 +818,9 @@
   }
 
   function triggerFallback(url) {
-    window.open(url, '_blank');
+    // _blank window.open 제거 — about:blank 탭 방지
+    // 미사용 경로이나 외부 노출 유지 (스모크 테스트 참조)
+    window.location.href = url;
   }
 
   // -------------------------------------------------------
@@ -901,8 +914,22 @@
     var btn = getEl('btn-save-band');
     if (btn) btn.disabled = true;
 
+    // 역순 정렬 + 파일명 재번호:
+    // 밴드 댓글 첨부 시 사진첩 최신순으로 표시되므로
+    // 저장 순서를 역순(마지막→첫 번째)으로 하면 밴드에서 원래 순서로 표시됨.
+    // 파일명 suffix도 역순 번호 부여 (마지막이 _1).
+    var total = items.length;
+    var reversedItems = items.slice().reverse().map(function (item, ri) {
+      // ri=0이 원래 마지막 항목 → suffix=1
+      var suffix = ri + 1;
+      // 파일명의 기존 suffix(숫자 또는 이름) 부분을 reverse 인덱스로 교체
+      // 형식: board_YYYYMMDD_역할_suffix.jpg
+      var newFilename = item.filename.replace(/_([^_]+)\.jpg$/, '_' + suffix + '.jpg');
+      return { blob: item.blob, filename: newFilename };
+    });
+
     // Web Share API 시도
-    var shareFiles = items.map(function (item) {
+    var shareFiles = reversedItems.map(function (item) {
       return new File([item.blob], item.filename, { type: 'image/jpeg' });
     });
 
@@ -920,6 +947,9 @@
         // "밴드 열기" 버튼 노출
         var openBandBtn = getEl('btn-open-band');
         if (openBandBtn) openBandBtn.style.display = 'block';
+        // "완전 초기화" 버튼 노출
+        var fullResetBtn2 = getEl('btn-autofill-reset-full');
+        if (fullResetBtn2) fullResetBtn2.style.display = 'inline-block';
       }).catch(function (err) {
         // AbortError: 사용자 취소 — 정상
         if (err && err.name !== 'AbortError') {
@@ -930,8 +960,8 @@
         _saveInProgress = false;
       });
     } else {
-      // 폴백: 다운로드
-      downloadBlobs(items)
+      // 폴백: 다운로드 (역순 배열 사용)
+      downloadBlobs(reversedItems)
         .then(function () {
           recordSession();
           openBandApp();
@@ -968,6 +998,16 @@
 
     var clearPhotosBtn = getEl('slot-clear-photos-btn');
     if (clearPhotosBtn) clearPhotosBtn.addEventListener('click', clearAllPhotos);
+
+    var fullResetBtn = getEl('btn-autofill-reset-full');
+    if (fullResetBtn) fullResetBtn.addEventListener('click', function () {
+      var workers = window.AppMain ? window.AppMain.getSelectedWorkers() : [];
+      resetState();
+      // slots를 작업원 기준 기본 상태로 재생성
+      _state.slots = buildInitialSlots(workers);
+      _state.photos = _state.slots.map(function () { return null; });
+      _state.thumbUrls = _state.slots.map(function () { return null; });
+    });
   }
 
   // -------------------------------------------------------

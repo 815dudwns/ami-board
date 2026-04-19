@@ -64,6 +64,10 @@
 
     var openBandBtn = getEl('btn-open-band');
     if (openBandBtn) openBandBtn.style.display = 'none';
+
+    // Tier 3: 수동 취소 버튼 숨김
+    var cancelBtn = getEl('btn-autofill-cancel');
+    if (cancelBtn) cancelBtn.style.display = 'none';
   }
 
   // -------------------------------------------------------
@@ -327,29 +331,110 @@
   }
 
   // -------------------------------------------------------
-  // 단계 2: 멀티셀렉트 (1회)
+  // 단계 2: 멀티셀렉트 (1회) — 3중 안전망으로 취소 감지
+  //
+  //   Tier 1 — cancel 이벤트 (Chrome 113+ / Safari 16.4+ / 최신 iOS Safari)
+  //   Tier 2 — window focus 복귀 + setTimeout 500ms 후 changeFired 미충족 시 취소
+  //   Tier 3 — #btn-autofill-cancel 버튼 (수동 취소, 최후의 보루)
+  //
   //   iOS/Safari user gesture chain 보존을 위해
-  //   이 함수는 change 핸들러 바인딩만 수행하고 Promise를 반환.
+  //   이 함수는 핸들러 바인딩만 수행하고 Promise를 반환.
   //   실제 input.click()은 호출자(runAutofill)가 동기 경로에서 직접 호출.
   // -------------------------------------------------------
   function step2BindChangeHandler(input) {
     return new Promise(function (resolve) {
-      // 이전 핸들러 해제
+      // 이미 등록된 리스너 정리 (중복 등록 방지)
       if (input._autoHandler) {
         input.removeEventListener('change', input._autoHandler);
         input._autoHandler = null;
       }
+      if (input._autoCancelHandler) {
+        input.removeEventListener('cancel', input._autoCancelHandler);
+        input._autoCancelHandler = null;
+      }
+      if (input._autoFocusHandler) {
+        window.removeEventListener('focus', input._autoFocusHandler);
+        input._autoFocusHandler = null;
+      }
+      if (input._autoCancelBtnHandler) {
+        var cancelBtn = getEl('btn-autofill-cancel');
+        if (cancelBtn) cancelBtn.removeEventListener('click', input._autoCancelBtnHandler);
+        input._autoCancelBtnHandler = null;
+      }
 
-      function onChange(e) {
-        input.removeEventListener('change', onChange);
+      var resolved = false;
+      var changeFired = false;
+
+      // 모든 리스너 일괄 정리
+      function cleanup() {
+        input.removeEventListener('change', input._autoHandler);
         input._autoHandler = null;
+        input.removeEventListener('cancel', input._autoCancelHandler);
+        input._autoCancelHandler = null;
+        window.removeEventListener('focus', input._autoFocusHandler);
+        input._autoFocusHandler = null;
+        var cancelBtn = getEl('btn-autofill-cancel');
+        if (cancelBtn && input._autoCancelBtnHandler) {
+          cancelBtn.removeEventListener('click', input._autoCancelBtnHandler);
+        }
+        input._autoCancelBtnHandler = null;
+      }
+
+      // 취소 공통 처리 (어느 경로든 여기서 resolve([]))
+      function handleCancel(source) {
+        if (resolved) return;
+        resolved = true;
+        console.debug('[autofill] cancelled via', source);
+        cleanup();
+        resolve([]);
+      }
+
+      // Tier 1: change 핸들러
+      function onChange(e) {
+        if (resolved) return;
+        changeFired = true;
+        resolved = true;
+        cleanup();
         var files = e.target.files ? Array.prototype.slice.call(e.target.files) : [];
         input.value = '';
         resolve(files);
       }
 
+      // Tier 1: cancel 이벤트 (Chrome 113+ / Safari 16.4+)
+      function onCancel() {
+        handleCancel('cancel-event');
+      }
+
+      // Tier 2: window focus 복귀 감지
+      function onFocusReturn() {
+        // 포커스 복귀 후 500ms 안에 change가 오지 않으면 취소로 판단
+        setTimeout(function () {
+          if (!changeFired) {
+            handleCancel('focus-fallback');
+          }
+        }, 500);
+      }
+
+      // Tier 3: 수동 취소 버튼
+      function onCancelBtn() {
+        handleCancel('manual-reset');
+      }
+
+      // 핸들러 등록
       input.addEventListener('change', onChange);
       input._autoHandler = onChange;
+
+      input.addEventListener('cancel', onCancel);
+      input._autoCancelHandler = onCancel;
+
+      window.addEventListener('focus', onFocusReturn, { once: true });
+      input._autoFocusHandler = onFocusReturn;
+
+      var cancelBtn = getEl('btn-autofill-cancel');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', onCancelBtn);
+        input._autoCancelBtnHandler = onCancelBtn;
+      }
     });
   }
 
@@ -563,6 +648,10 @@
     btn.disabled = true;
     btn.textContent = '진행 중...';
 
+    // Tier 3: 수동 취소 버튼 표시
+    var cancelBtn = getEl('btn-autofill-cancel');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
     // GPS/매치를 fire-and-forget으로 먼저 시작 (await 없이 Promise만 보관)
     var gpsPromise = step1CommonFields(projectName, workers);
 
@@ -588,8 +677,12 @@
 
     // 사진 선택이 완료되면 GPS 결과를 기다린 뒤 슬롯 UI 진입
     filesPromise.then(function (files) {
+      // 취소 버튼 숨김 (Tier 1/2/3 어느 경로든 resolve 후 항상 숨김)
+      var cancelBtnInner = getEl('btn-autofill-cancel');
+      if (cancelBtnInner) cancelBtnInner.style.display = 'none';
+
       if (!files || files.length === 0) {
-        // 사진 미선택 → GPS도 취소 상태로 두고 중단
+        // 사진 미선택(취소) → GPS도 취소 상태로 두고 중단
         _state.active = false;
         btn.disabled = false;
         btn.textContent = '자동 입히기';
@@ -611,6 +704,8 @@
       btn.disabled = false;
       btn.textContent = '자동 입히기';
       _state.active = false;
+      var cancelBtnErr = getEl('btn-autofill-cancel');
+      if (cancelBtnErr) cancelBtnErr.style.display = 'none';
       alert('자동 입히기 중 오류가 발생했습니다: ' + err.message);
     });
 

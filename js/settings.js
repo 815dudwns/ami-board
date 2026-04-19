@@ -124,6 +124,15 @@ var Settings = (function () {
     var hasWorker = state.workers.length >= 1;
     var doneBtn = document.getElementById('btn-onboarding-done');
     doneBtn.disabled = !(hasProject && hasWorker);
+    if (!hasProject && !hasWorker) {
+      doneBtn.textContent = '공사명·작업원 추가하세요';
+    } else if (!hasProject) {
+      doneBtn.textContent = '공사명 추가하세요';
+    } else if (!hasWorker) {
+      doneBtn.textContent = '작업원 추가하세요';
+    } else {
+      doneBtn.textContent = '완료';
+    }
   }
 
   function bindEvents() {

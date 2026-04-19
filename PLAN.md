@@ -70,7 +70,7 @@ interface StateV2 {
 | 필드 | 소스 | 수정 | 비고 |
 |---|---|---|---|
 | 공사명 | `<select>` from `projectNames` | ✅ | 기본값 = `lastSelected.projectName` |
-| 사업소 | `<select>` — (자동) + 7개 지사 자동 매핑 + 수동 선택 | ✅ | 구(區) 기반 `office-mapping.js` |
+| 사업소 | `<select>` — 7개 지사만 (자동 옵션 없음). 작업장소 변경 시 항상 재매핑, 매핑 없으면 현재 값 유지. 수동 선택은 다음 작업장소 변경 시까지만 유지 | ✅ | 구(區) 기반 `office-mapping.js` |
 | 작업장소 | 입력 칸 + GPS 버튼 + 지도 버튼 + 자동 입히기 | ✅ | |
 | 내용 | **토글 버튼 2개** `[오전]` `[오후]`: "작업전안전회의 오전" / "작업전안전회의 오후" | ✅ | 기본값 = 현재 시각 기반 자동 (12시 이전=오전). `aria-pressed` 라디오 동작 |
 | 작업일자 | `<input type="date">` 오늘 자동 YYYY-MM-DD | ✅ | 자정 경과 시 자동 갱신(visibilitychange/focus/pageshow+setInterval). 수동 변경 시 갱신 중지 |

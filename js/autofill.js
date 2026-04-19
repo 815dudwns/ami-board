@@ -550,12 +550,7 @@
   // 단계 4: 합성
   // -------------------------------------------------------
   function step4Compose(projectName) {
-    // 사업소 선택 검증
-    var officeEl = getEl('field-office');
-    if (officeEl && !officeEl.value) {
-      alert('사업소를 선택하세요.');
-      return Promise.resolve();
-    }
+    // 사업소는 항상 7개 중 하나로 채워짐 — 빈 값 체크 불필요
 
     var workers = _state.slots
       .filter(function (s) { return s.role !== 'document'; })

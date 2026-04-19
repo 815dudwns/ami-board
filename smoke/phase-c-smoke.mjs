@@ -343,7 +343,7 @@ async function runTests() {
     ) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 7: 사업소 select — (자동) + 7개 옵션 + 자동 매핑
+    // Scenario 7: 사업소 select — (자동) 없음, 7개 옵션만, 작업장소 blur 시 자동 매핑 + 덮어쓰기
     // =========================================================
     console.log('\n=== Scenario 7: 사업소 select 검증 ===');
 
@@ -352,80 +352,81 @@ async function runTests() {
       if (!sel || sel.tagName !== 'SELECT') return { exists: false };
 
       const opts = Array.from(sel.options).map(o => ({ value: o.value, text: o.text }));
-      const hasAuto = opts[0] && opts[0].value === '';
-      const officeOptions = opts.filter(o => o.value !== '');
+      // (자동) 옵션 없음 확인: 첫 번째 옵션이 value='' 이면 안 됨
+      const noAutoOption = !(opts[0] && opts[0].value === '');
       const expectedOffices = [
         '강북성북지사', '동대문중랑지사', '서대문은평지사', '서울본부직할',
         '광진성동지사', '마포용산지사', '노원도봉지사'
       ];
       const allOfficesPresent = expectedOffices.every(
-        name => officeOptions.some(o => o.value === name)
+        name => opts.some(o => o.value === name)
       );
 
       return {
         exists: true,
-        hasAuto: hasAuto,
-        optionCount: officeOptions.length,
+        noAutoOption: noAutoOption,
+        optionCount: opts.length,
         allOfficesPresent: allOfficesPresent
       };
     });
 
     console.log('  7a. #field-office select 존재:', officeCheck.exists ? 'PASS' : 'FAIL');
-    console.log('  7b. (자동) 옵션 첫번째:', officeCheck.hasAuto ? 'PASS' : 'FAIL');
+    console.log('  7b. (자동) 옵션 없음:', officeCheck.noAutoOption ? 'PASS' : 'FAIL');
     console.log('  7c. 7개 지사 옵션 모두 존재:', officeCheck.allOfficesPresent ? 'PASS' : `FAIL (${officeCheck.optionCount}개)`);
 
-    // 자동 매핑 검증: 마포구 주소 입력 → blur → 마포용산지사 자동 선택
+    // 자동 매핑 검증: 마포구 주소 blur → 마포용산지사 자동 선택
     const autoMappingCheck = await page.evaluate(() => {
       const workplace = document.getElementById('workplace');
       const sel = document.getElementById('field-office');
       if (!workplace || !sel) return { mapped: false, error: 'element not found' };
 
-      // 마포구 주소 입력
       workplace.value = '서울특별시 마포구 합정동 123';
       workplace.dispatchEvent(new Event('blur', { bubbles: true }));
 
       return { mapped: sel.value === '마포용산지사', value: sel.value };
     });
-    console.log('  7d. 마포구 → 마포용산지사 자동 매핑:', autoMappingCheck.mapped ? 'PASS' : `FAIL (got: "${autoMappingCheck.value}")`);
+    console.log('  7d. 마포구 blur → 마포용산지사 자동 매핑:', autoMappingCheck.mapped ? 'PASS' : `FAIL (got: "${autoMappingCheck.value}")`);
 
-    // 매핑 없는 구 → (자동) 유지 확인
+    // 매핑 없는 구 blur → 이전 값 유지 확인 (7d에서 마포용산지사가 세팅된 상태)
     const noMappingCheck = await page.evaluate(() => {
       const workplace = document.getElementById('workplace');
       const sel = document.getElementById('field-office');
       if (!workplace || !sel) return { kept: false };
 
+      const prevValue = sel.value; // 마포용산지사
       workplace.value = '서울특별시 영등포구 여의도동 999';
       workplace.dispatchEvent(new Event('blur', { bubbles: true }));
 
-      return { kept: sel.value === '', value: sel.value };
+      // 매핑 없으면 이전 값 유지
+      return { kept: sel.value === prevValue && sel.value !== '', value: sel.value, prevValue: prevValue };
     });
-    console.log('  7e. 영등포구(미매핑) → (자동) 유지:', noMappingCheck.kept ? 'PASS' : `FAIL (got: "${noMappingCheck.value}")`);
+    console.log('  7e. 영등포구(미매핑) blur → 이전 값 유지:', noMappingCheck.kept ? 'PASS' : `FAIL (got: "${noMappingCheck.value}", was: "${noMappingCheck.prevValue}")`);
 
-    // 수동 선택 후 주소 변경해도 유지 확인
-    const manualKeepCheck = await page.evaluate(() => {
+    // 수동 선택 후 마포구 blur → 마포용산지사로 덮어씀 (manual 우선권 없음)
+    const manualOverwriteCheck = await page.evaluate(() => {
       const workplace = document.getElementById('workplace');
       const sel = document.getElementById('field-office');
-      if (!workplace || !sel) return { kept: false };
+      if (!workplace || !sel) return { overwritten: false };
 
       // 수동 선택
       sel.value = '노원도봉지사';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
 
-      // 마포구 주소로 변경해도 수동 선택 유지
+      // 마포구 주소로 변경 → 마포용산지사로 덮어써야 함
       workplace.value = '서울특별시 마포구 합정동 456';
       workplace.dispatchEvent(new Event('blur', { bubbles: true }));
 
-      return { kept: sel.value === '노원도봉지사', value: sel.value };
+      return { overwritten: sel.value === '마포용산지사', value: sel.value };
     });
-    console.log('  7f. 수동 선택 후 주소 변경 → 수동값 유지:', manualKeepCheck.kept ? 'PASS' : `FAIL (got: "${manualKeepCheck.value}")`);
+    console.log('  7f. 수동 선택 후 마포구 blur → 마포용산지사 덮어씀:', manualOverwriteCheck.overwritten ? 'PASS' : `FAIL (got: "${manualOverwriteCheck.value}")`);
 
     results['Scenario 7'] = (
       officeCheck.exists &&
-      officeCheck.hasAuto &&
+      officeCheck.noAutoOption &&
       officeCheck.allOfficesPresent &&
       autoMappingCheck.mapped &&
       noMappingCheck.kept &&
-      manualKeepCheck.kept
+      manualOverwriteCheck.overwritten
     ) ? 'PASS' : 'FAIL';
 
     // =========================================================

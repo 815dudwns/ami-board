@@ -112,23 +112,15 @@
     }
   }
 
-  // 사업소 수동 선택 플래그 (페이지 새로고침 시 초기화)
-  var _officeManual = false;
-
   // -------------------------------------------------------
-  // B-2: 사업소 select 초기화 (자동 매핑 + 수동 선택)
+  // B-2: 사업소 select 초기화 (7개 지사, (자동) 없음)
   // -------------------------------------------------------
   function initOffice() {
     var sel = document.getElementById('field-office');
     if (!sel) return;
 
-    // options 구성: "(자동)" + OFFICE_LIST
+    // options 구성: OFFICE_LIST 7개만
     sel.innerHTML = '';
-    var autoOpt = document.createElement('option');
-    autoOpt.value = '';
-    autoOpt.textContent = '(자동)';
-    sel.appendChild(autoOpt);
-
     window.OfficeMapping.OFFICE_LIST.forEach(function (name) {
       var opt = document.createElement('option');
       opt.value = name;
@@ -136,35 +128,26 @@
       sel.appendChild(opt);
     });
 
-    // lastSelected.office 복원 (수동 선택 기록 있으면 복원)
+    // lastSelected.office 복원, 없으면 첫 번째 지사
     var state = Storage.getState();
     var savedOffice = state.lastSelected && state.lastSelected.office;
     if (savedOffice && window.OfficeMapping.OFFICE_LIST.indexOf(savedOffice) !== -1) {
       sel.value = savedOffice;
-      // 자동 매핑 결과가 저장된 것인지 수동인지 구분 불가 → 일단 자동 모드 유지
-      _officeManual = false;
+    } else {
+      sel.value = window.OfficeMapping.OFFICE_LIST[0];
     }
 
-    // 수동 선택 이벤트
+    // 수동 선택 이벤트 — lastSelected에 저장
     sel.addEventListener('change', function () {
-      if (sel.value === '') {
-        // "(자동)" 재선택 → 자동 모드 복귀 + 현재 주소로 재평가
-        _officeManual = false;
-        var workplace = document.getElementById('workplace').value;
-        applyOfficeAutoMap(workplace);
-      } else {
-        _officeManual = true;
-        Storage.setLastSelected({ office: sel.value });
-      }
+      Storage.setLastSelected({ office: sel.value });
     });
   }
 
   /**
    * 주소에서 구 추출 → 사업소 자동 매핑.
-   * 수동 모드(_officeManual=true)면 아무것도 안 함.
+   * 매핑 결과 있으면 select 갱신, 없으면 현재 값 유지.
    */
   function applyOfficeAutoMap(address) {
-    if (_officeManual) return;
     var sel = document.getElementById('field-office');
     if (!sel) return;
 
@@ -172,10 +155,8 @@
     if (mapped) {
       sel.value = mapped;
       Storage.setLastSelected({ office: mapped });
-    } else {
-      sel.value = '';
-      // 매핑 결과 없으면 "(자동)" 유지 — 사용자가 수동 선택해야 함
     }
+    // 매핑 없으면 현재 선택값 유지 (덮어쓰지 않음)
   }
 
   // -------------------------------------------------------

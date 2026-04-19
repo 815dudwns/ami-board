@@ -94,11 +94,12 @@ var Compose = (function () {
   // padding:     10/1920 ≈ 0.521%
   // rowH:        34/1920 ≈ 1.771%
   // margin:      16/1920 ≈ 0.833%
-  var RATIO_FONT       = 22 / 1920;   // 1.146%
-  var RATIO_LABEL_FONT = 18 / 1920;   // 0.938%
-  var RATIO_PADDING    = 10 / 1920;   // 0.521%
-  var RATIO_ROW_H      = 34 / 1920;   // 1.771%
-  var RATIO_MARGIN     = 16 / 1920;   // 0.833%
+  // 1.5× upscale (20% → 30%)
+  var RATIO_FONT       = 33 / 1920;   // 1.719%
+  var RATIO_LABEL_FONT = 27 / 1920;   // 1.406%
+  var RATIO_PADDING    = 15 / 1920;   // 0.781%
+  var RATIO_ROW_H      = 51 / 1920;   // 2.656%
+  var RATIO_MARGIN     = 24 / 1920;   // 1.250%
 
   function drawTable(ctx, imgW, imgH, data) {
     // 긴 쪽(longerSide) 기준으로 비율 계산
@@ -144,7 +145,7 @@ var Compose = (function () {
 
     // 테두리
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = Math.max(1, Math.round(1.5 / 1920 * longerSide));
+    ctx.lineWidth = Math.max(1, Math.round(2.25 / 1920 * longerSide));
     ctx.strokeRect(tableX, tableY, tableW, tableH);
 
     TABLE_ROWS.forEach(function (row, i) {

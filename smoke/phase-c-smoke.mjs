@@ -306,17 +306,18 @@ async function runTests() {
     results['Scenario 5'] = (captureCheck.allExist && captureCheck.noCapture) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 6: 합성 미리보기 그리드 + 슬롯 할당 UI + 저장 버튼
-    //   Phase F: 슬롯 할당 UI (#slot-assign-ui) 존재 추가 확인
+    // Scenario 6: 합성 미리보기 그리드 + 슬롯 카드 UI + 저장 버튼
+    //   Phase F: 슬롯 카드 그리드 (#slot-cards, #slot-add-btn) 존재 확인
     // =========================================================
-    console.log('\n=== Scenario 6: 미리보기 그리드 + 슬롯 할당 UI + 저장+밴드 버튼 ===');
+    console.log('\n=== Scenario 6: 미리보기 그리드 + 슬롯 카드 UI + 저장+밴드 버튼 ===');
 
     const gridCheck = await page.evaluate(() => {
       const grid = document.getElementById('preview-grid');
       const items = document.getElementById('preview-grid-items');
       const saveBand = document.getElementById('btn-save-band');
       const slotUI = document.getElementById('slot-assign-ui');
-      const slotList = document.getElementById('slot-list');
+      const slotCards = document.getElementById('slot-cards');
+      const slotAddBtn = document.getElementById('slot-add-btn');
       const composeBtn = document.getElementById('btn-compose-preview');
       return {
         gridExists: !!grid,
@@ -324,7 +325,8 @@ async function runTests() {
         saveBandExists: !!saveBand,
         saveBandDisabled: saveBand ? saveBand.disabled : false,
         slotUIExists: !!slotUI,
-        slotListExists: !!slotList,
+        slotCardsExists: !!slotCards,
+        slotAddBtnExists: !!slotAddBtn,
         composeBtnExists: !!composeBtn
       };
     });
@@ -334,8 +336,9 @@ async function runTests() {
     console.log('  6c. #btn-save-band 존재:', gridCheck.saveBandExists ? 'PASS' : 'FAIL');
     console.log('  6d. #btn-save-band disabled(초기):', gridCheck.saveBandDisabled ? 'PASS' : 'FAIL');
     console.log('  6e. #slot-assign-ui 존재(Phase F):', gridCheck.slotUIExists ? 'PASS' : 'FAIL');
-    console.log('  6f. #slot-list 존재(Phase F):', gridCheck.slotListExists ? 'PASS' : 'FAIL');
-    console.log('  6g. #btn-compose-preview 존재(Phase F):', gridCheck.composeBtnExists ? 'PASS' : 'FAIL');
+    console.log('  6f. #slot-cards 존재(Phase F):', gridCheck.slotCardsExists ? 'PASS' : 'FAIL');
+    console.log('  6g. #slot-add-btn 존재(Phase F):', gridCheck.slotAddBtnExists ? 'PASS' : 'FAIL');
+    console.log('  6h. #btn-compose-preview 존재(Phase F):', gridCheck.composeBtnExists ? 'PASS' : 'FAIL');
 
     results['Scenario 6'] = (
       gridCheck.gridExists &&
@@ -343,7 +346,8 @@ async function runTests() {
       gridCheck.saveBandExists &&
       gridCheck.saveBandDisabled &&
       gridCheck.slotUIExists &&
-      gridCheck.slotListExists &&
+      gridCheck.slotCardsExists &&
+      gridCheck.slotAddBtnExists &&
       gridCheck.composeBtnExists
     ) ? 'PASS' : 'FAIL';
 

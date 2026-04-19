@@ -1,40 +1,49 @@
 /*
- * autofill.js — Phase F: 멀티셀렉트 + 슬롯 할당 + Web Share
+ * autofill.js — Phase F: 멀티셀렉트 + 슬롯 카드 드래그 정렬 + X/+ 가변 + Web Share
  *
- * 의존: storage.js, compose.js, app.js(window.AppMain)
+ * 의존: storage.js, compose.js, app.js(window.AppMain), Sortable.js
  *
  * 플로우:
  *   1. 공통필드 자동채우기 (GPS/매치) — Phase C 로직 유지
  *   2. 멀티셀렉트 1회: <input type="file" accept="image/*" multiple>
- *   3. 슬롯 할당 UI: 썸네일 그리드 + 슬롯 목록
- *   4. 합성: 할당된 슬롯만 compose() 일괄 처리
+ *   3. 슬롯 카드 UI: 드래그 정렬 + X/+ 가변 (최대 6장)
+ *   4. 합성: 사진이 있는 카드만 compose() 일괄 처리
  *   5. 저장: Web Share 우선 → 폴백 download
  *   6. 밴드 열기: bandapp:// 딥링크
+ *
+ * 상태 모델:
+ *   _state.slots  = [{ role, label, workerName }]  — 역할 순서 고정
+ *   _state.photos = [File|null, ...]               — 드래그로 순서 바뀜, slots와 동일 길이
+ *
+ * DOM id/클래스 (Claude Design 교체 대비 유지):
+ *   #slot-assign-ui, #slot-cards, .slot-card[data-role][data-index]
+ *   .slot-label, .slot-thumb, .slot-remove-btn, .slot-add-btn
  */
 
 (function () {
+
+  var MAX_SLOTS = 6;
 
   // -------------------------------------------------------
   // 임시 상태 (메모리 only)
   // -------------------------------------------------------
   var _state = {
     active: false,
-    workers: [],
-    // 선택된 File 객체 배열
-    files: [],
-    // 썸네일 Blob URL 배열 (files 인덱스 대응)
-    thumbUrls: [],
-    // 슬롯 할당: { slotKey: fileIndex | 'skip' | null }
-    slotAssign: {},
-    // 합성 결과: { slotKey: { blob, blobUrl, filename } }
-    composed: {}
+    // 슬롯 배열: [{ role: 'worker'|'document'|'chadaebi', label, workerName }]
+    slots: [],
+    // 사진 배열: [File|null] — slots와 동일 길이
+    photos: [],
+    // 합성 결과: { idx: { blob, blobUrl, filename, label } }
+    composed: {},
+    // 썸네일 Blob URL 캐시: photos 인덱스 → blobUrl
+    thumbUrls: []
   };
+
+  // Sortable 인스턴스 (재초기화용)
+  var _sortable = null;
 
   // 다중 클릭 가드
   var _saveInProgress = false;
-
-  // 현재 열려 있는 슬롯 모달 대상 slotKey
-  var _modalSlotKey = null;
 
   // -------------------------------------------------------
   // 상태 초기화 (Blob URL 회수 포함)
@@ -48,13 +57,16 @@
       if (c && c.blobUrl) URL.revokeObjectURL(c.blobUrl);
     });
 
+    if (_sortable) {
+      _sortable.destroy();
+      _sortable = null;
+    }
+
     _state.active = false;
-    _state.workers = [];
-    _state.files = [];
+    _state.slots = [];
+    _state.photos = [];
     _state.thumbUrls = [];
-    _state.slotAssign = {};
     _state.composed = {};
-    _modalSlotKey = null;
 
     hideSlotUI();
     hidePreviewGrid();
@@ -91,172 +103,169 @@
   }
 
   // -------------------------------------------------------
-  // 슬롯 키 목록 생성
-  //   '__workers__', '__documents__', '{이름}__vehicle__'
+  // 썸네일 URL 확보 (이미 캐시 있으면 재사용)
   // -------------------------------------------------------
-  function buildSlotKeys(workers) {
-    var keys = ['__workers__', '__documents__'];
-    workers.forEach(function (name) {
-      keys.push(name + '__vehicle__');
+  function ensureThumbUrl(idx) {
+    if (_state.thumbUrls[idx]) return _state.thumbUrls[idx];
+    var file = _state.photos[idx];
+    if (!file) return null;
+    var url = URL.createObjectURL(file);
+    _state.thumbUrls[idx] = url;
+    return url;
+  }
+
+  // photos 배열 변경 시 영향받는 thumbUrl 회수 후 재생성
+  function invalidateThumbUrl(idx) {
+    if (_state.thumbUrls[idx]) {
+      URL.revokeObjectURL(_state.thumbUrls[idx]);
+      _state.thumbUrls[idx] = null;
+    }
+  }
+
+  // -------------------------------------------------------
+  // 초기 slots 빌드 (멀티셀렉트 직후)
+  // -------------------------------------------------------
+  function buildInitialSlots(workers) {
+    var slots = [
+      { role: 'worker', label: '작업원', workerName: null },
+      { role: 'document', label: '서류', workerName: null }
+    ];
+
+    // 차대비 슬롯: 작업원 명단에서 생성. 총 6개 한도 내.
+    var maxChadaebi = MAX_SLOTS - 2;
+    var chadaebiWorkers = workers.slice(0, maxChadaebi);
+
+    if (workers.length > maxChadaebi) {
+      alert('작업원이 많아 앞 ' + maxChadaebi + '명만 차대비 카드로 생성됩니다.');
+    }
+
+    chadaebiWorkers.forEach(function (name) {
+      slots.push({ role: 'chadaebi', label: name + ' 차대비', workerName: name });
     });
-    return keys;
-  }
 
-  function slotLabel(slotKey, workers) {
-    if (slotKey === '__workers__') return '작업원 사진';
-    if (slotKey === '__documents__') return '서류 사진';
-    var m = slotKey.match(/^(.+)__vehicle__$/);
-    if (m) return m[1] + ' 차대비';
-    return slotKey;
+    return slots;
   }
 
   // -------------------------------------------------------
-  // 썸네일 그리드 렌더 (선택 가능 그리드 — 슬롯 할당 모달용)
+  // + 버튼: 익명 차대비 슬롯 추가
   // -------------------------------------------------------
-  function renderThumbGrid(containerId, onSelect, selectedIndex) {
-    var container = getEl(containerId);
+  function addChadaebiSlot() {
+    if (_state.slots.length >= MAX_SLOTS) {
+      alert('최대 ' + MAX_SLOTS + '개 카드까지 가능합니다.');
+      return;
+    }
+    var existingChadaebi = _state.slots.filter(function (s) { return s.role === 'chadaebi'; });
+    var n = existingChadaebi.length + 1;
+    _state.slots.push({ role: 'chadaebi', label: '차대비 ' + n, workerName: null });
+    _state.photos.push(null);
+    renderCards();
+  }
+
+  // -------------------------------------------------------
+  // X 버튼: 차대비 슬롯 제거
+  // -------------------------------------------------------
+  function removeChadaebiSlot(idx) {
+    if (_state.slots[idx].role !== 'chadaebi') return;
+    invalidateThumbUrl(idx);
+    _state.slots.splice(idx, 1);
+    _state.photos.splice(idx, 1);
+    _state.thumbUrls.splice(idx, 1);
+    renderCards();
+  }
+
+  // -------------------------------------------------------
+  // 카드 그리드 렌더 (Sortable 재초기화 포함)
+  // -------------------------------------------------------
+  function renderCards() {
+    var container = getEl('slot-cards');
     if (!container) return;
     container.innerHTML = '';
 
-    _state.files.forEach(function (file, idx) {
-      var wrap = document.createElement('div');
-      wrap.className = 'slot-thumb-item' + (idx === selectedIndex ? ' slot-thumb-item--selected' : '');
+    if (_sortable) {
+      _sortable.destroy();
+      _sortable = null;
+    }
 
-      var img = document.createElement('img');
-      img.className = 'slot-thumb-img';
-      img.alt = '사진 ' + (idx + 1);
-      if (_state.thumbUrls[idx]) {
-        img.src = _state.thumbUrls[idx];
-      }
+    _state.slots.forEach(function (slot, idx) {
+      var card = document.createElement('div');
+      card.className = 'slot-card';
+      card.setAttribute('data-role', slot.role);
+      card.setAttribute('data-index', String(idx));
 
-      var num = document.createElement('span');
-      num.className = 'slot-thumb-num';
-      num.textContent = idx + 1;
+      // 라벨
+      var labelEl = document.createElement('div');
+      labelEl.className = 'slot-label';
+      labelEl.textContent = slot.label;
+      card.appendChild(labelEl);
 
-      wrap.appendChild(img);
-      wrap.appendChild(num);
-
-      wrap.addEventListener('click', function () {
-        onSelect(idx);
-      });
-
-      container.appendChild(wrap);
-    });
-  }
-
-  // -------------------------------------------------------
-  // 슬롯 할당 UI 렌더
-  // -------------------------------------------------------
-  function renderSlotList() {
-    var workers = _state.workers;
-    var slotKeys = buildSlotKeys(workers);
-    var container = getEl('slot-list');
-    if (!container) return;
-    container.innerHTML = '';
-
-    slotKeys.forEach(function (slotKey) {
-      var label = slotLabel(slotKey, workers);
-      var assigned = _state.slotAssign[slotKey];
-
-      var row = document.createElement('div');
-      row.className = 'slot-row';
-      row.setAttribute('data-slot', slotKey);
-
-      var labelEl = document.createElement('span');
-      labelEl.className = 'slot-row__label';
-      labelEl.textContent = label;
-
-      var preview = document.createElement('div');
-      preview.className = 'slot-row__preview';
-
-      if (assigned === 'skip') {
-        preview.innerHTML = '<span class="slot-skip-badge">건너뜀</span>';
-      } else if (typeof assigned === 'number' && _state.thumbUrls[assigned]) {
-        var previewImg = document.createElement('img');
-        previewImg.className = 'slot-row__thumb';
-        previewImg.src = _state.thumbUrls[assigned];
-        previewImg.alt = label + ' 선택됨';
-        preview.appendChild(previewImg);
+      // 썸네일 영역
+      var thumbEl = document.createElement('div');
+      thumbEl.className = 'slot-thumb';
+      var photo = _state.photos[idx];
+      if (photo) {
+        var url = ensureThumbUrl(idx);
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = slot.label + ' 썸네일';
+        thumbEl.appendChild(img);
       } else {
-        preview.innerHTML = '<span class="slot-empty-hint">미배정</span>';
+        var emptyHint = document.createElement('span');
+        emptyHint.className = 'slot-thumb-empty';
+        emptyHint.textContent = '사진 없음';
+        thumbEl.appendChild(emptyHint);
+      }
+      card.appendChild(thumbEl);
+
+      // 차대비 카드만 X 버튼
+      if (slot.role === 'chadaebi') {
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'slot-remove-btn btn-sm';
+        removeBtn.setAttribute('aria-label', slot.label + ' 삭제');
+        removeBtn.textContent = 'X';
+        (function (i) {
+          removeBtn.addEventListener('click', function () { removeChadaebiSlot(i); });
+        })(idx);
+        card.appendChild(removeBtn);
       }
 
-      var pickBtn = document.createElement('button');
-      pickBtn.className = 'btn-secondary btn-sm';
-      pickBtn.type = 'button';
-      pickBtn.textContent = '사진 선택';
-      pickBtn.addEventListener('click', (function (key) {
-        return function () { openSlotModal(key); };
-      })(slotKey));
-
-      var skipBtn = document.createElement('button');
-      skipBtn.className = 'btn-secondary btn-sm';
-      skipBtn.type = 'button';
-      skipBtn.textContent = '건너뛰기';
-      skipBtn.addEventListener('click', (function (key) {
-        return function () {
-          _state.slotAssign[key] = 'skip';
-          renderSlotList();
-          updateComposePreviewBtn();
-        };
-      })(slotKey));
-
-      var actions = document.createElement('div');
-      actions.className = 'slot-row__actions';
-      actions.appendChild(pickBtn);
-      actions.appendChild(skipBtn);
-
-      row.appendChild(labelEl);
-      row.appendChild(preview);
-      row.appendChild(actions);
-      container.appendChild(row);
+      container.appendChild(card);
     });
-  }
 
-  // -------------------------------------------------------
-  // 슬롯 모달 열기/닫기
-  // -------------------------------------------------------
-  function openSlotModal(slotKey) {
-    _modalSlotKey = slotKey;
-    var workers = _state.workers;
-    var label = slotLabel(slotKey, workers);
-    var titleEl = getEl('slot-modal-title');
-    if (titleEl) titleEl.textContent = label + ' — 사진 선택';
+    // + 버튼 disabled 상태 갱신
+    var addBtn = getEl('slot-add-btn');
+    if (addBtn) addBtn.disabled = _state.slots.length >= MAX_SLOTS;
 
-    var currentAssign = _state.slotAssign[slotKey];
-    var currentIdx = (typeof currentAssign === 'number') ? currentAssign : -1;
+    // Sortable.js 초기화
+    if (typeof Sortable !== 'undefined') {
+      _sortable = new Sortable(container, {
+        animation: 150,
+        filter: '.slot-remove-btn',
+        preventOnFilter: false,
+        onEnd: function (evt) {
+          if (evt.oldIndex === evt.newIndex) return;
+          // photos만 재정렬 (slots 고정)
+          var moved = _state.photos.splice(evt.oldIndex, 1)[0];
+          var movedThumb = _state.thumbUrls.splice(evt.oldIndex, 1)[0];
+          _state.photos.splice(evt.newIndex, 0, moved);
+          _state.thumbUrls.splice(evt.newIndex, 0, movedThumb);
+          renderCards();
+        }
+      });
+    }
 
-    renderThumbGrid('slot-modal-thumb-grid', function (idx) {
-      _state.slotAssign[_modalSlotKey] = idx;
-      closeSlotModal();
-      renderSlotList();
-      updateComposePreviewBtn();
-    }, currentIdx);
-
-    var backdrop = getEl('slot-modal-backdrop');
-    if (backdrop) backdrop.style.display = 'flex';
-  }
-
-  function closeSlotModal() {
-    _modalSlotKey = null;
-    var backdrop = getEl('slot-modal-backdrop');
-    if (backdrop) backdrop.style.display = 'none';
+    updateComposePreviewBtn();
   }
 
   // -------------------------------------------------------
   // "합성 미리보기" 버튼 활성 조건 체크
-  //   모든 슬롯이 할당(number) 또는 skip 이면 활성화
+  //   사진이 하나라도 있으면 활성화 (빈 카드는 자동 스킵)
   // -------------------------------------------------------
   function updateComposePreviewBtn() {
     var btn = getEl('btn-compose-preview');
     if (!btn) return;
-    var workers = _state.workers;
-    var slotKeys = buildSlotKeys(workers);
-    var allDecided = slotKeys.every(function (k) {
-      var v = _state.slotAssign[k];
-      return typeof v === 'number' || v === 'skip';
-    });
-    btn.disabled = !allDecided;
+    var hasAny = _state.photos.some(function (p) { return !!p; });
+    btn.disabled = !hasAny;
   }
 
   // -------------------------------------------------------
@@ -448,97 +457,67 @@
   }
 
   // -------------------------------------------------------
-  // 썸네일 Blob URL 생성 (createObjectURL)
+  // 단계 3: 슬롯 카드 UI 초기 표시
   // -------------------------------------------------------
-  function buildThumbUrls(files) {
-    return files.map(function (file) {
-      return URL.createObjectURL(file);
-    });
-  }
+  function step3SlotCardUI(files, workers) {
+    _state.slots = buildInitialSlots(workers);
 
-  // -------------------------------------------------------
-  // 단계 3: 슬롯 할당 UI 표시
-  // -------------------------------------------------------
-  function step3SlotAssignUI() {
-    var workers = _state.workers;
-    var slotKeys = buildSlotKeys(workers);
+    // 최대 6장 제한
+    var limitedFiles = files;
+    if (files.length > MAX_SLOTS) {
+      alert('최대 ' + MAX_SLOTS + '장까지 선택 가능합니다. 앞 ' + MAX_SLOTS + '장만 사용합니다.');
+      limitedFiles = files.slice(0, MAX_SLOTS);
+    }
 
-    // 초기 슬롯 상태 설정
-    _state.slotAssign = {};
-    slotKeys.forEach(function (k) { _state.slotAssign[k] = null; });
+    // photos: 슬롯 수만큼 초기화 (선택한 파일 앞에서부터 채움)
+    _state.photos = [];
+    _state.thumbUrls = [];
+    for (var i = 0; i < _state.slots.length; i++) {
+      _state.photos.push(limitedFiles[i] || null);
+      _state.thumbUrls.push(null);
+    }
 
-    // 썸네일 그리드 렌더 (표시 전용, 클릭 없음)
-    renderThumbGridDisplay();
-    // 슬롯 목록 렌더
-    renderSlotList();
-    updateComposePreviewBtn();
+    renderCards();
     showSlotUI();
-  }
-
-  // 상단 썸네일 그리드 (표시 전용)
-  function renderThumbGridDisplay() {
-    var container = getEl('slot-thumb-grid');
-    if (!container) return;
-    container.innerHTML = '';
-
-    _state.files.forEach(function (file, idx) {
-      var wrap = document.createElement('div');
-      wrap.className = 'slot-thumb-item';
-
-      var img = document.createElement('img');
-      img.className = 'slot-thumb-img';
-      img.alt = '사진 ' + (idx + 1);
-      if (_state.thumbUrls[idx]) img.src = _state.thumbUrls[idx];
-
-      var num = document.createElement('span');
-      num.className = 'slot-thumb-num';
-      num.textContent = idx + 1;
-
-      wrap.appendChild(img);
-      wrap.appendChild(num);
-      container.appendChild(wrap);
-    });
   }
 
   // -------------------------------------------------------
   // 단계 4: 합성
   // -------------------------------------------------------
   function step4Compose(projectName) {
-    var workers = _state.workers;
-    var allWorkerStr = workers.join(' ');
-
-    var tasks = [];
+    var workers = _state.slots
+      .filter(function (s) { return s.role !== 'document'; })
+      .map(function (s) { return s.label; });
+    // 실제 작업원 이름 목록은 AppMain에서 가져옴
+    var allWorkerStr = (window.AppMain ? window.AppMain.getSelectedWorkers() : []).join(' ');
     var dateStr = (getEl('field-date') || {}).value || '';
 
-    Object.keys(_state.slotAssign).forEach(function (slotKey) {
-      var assigned = _state.slotAssign[slotKey];
-      if (assigned === 'skip' || assigned === null) return;
-      if (typeof assigned !== 'number') return;
+    var tasks = [];
 
-      var file = _state.files[assigned];
-      if (!file) return;
+    _state.slots.forEach(function (slot, idx) {
+      var file = _state.photos[idx];
+      if (!file) return; // 사진 없는 카드는 스킵
 
       var boardData;
       var label;
       var filename;
 
-      if (slotKey === '__workers__') {
+      if (slot.role === 'worker') {
         boardData = window.AppMain.collectBoardData(allWorkerStr);
         label = '작업원 사진';
         filename = buildFilename(dateStr, '작업자', 1);
-      } else if (slotKey === '__documents__') {
+      } else if (slot.role === 'document') {
         boardData = window.AppMain.collectBoardData(allWorkerStr);
         label = '서류 사진';
         filename = buildFilename(dateStr, '서류', 1);
       } else {
-        var m = slotKey.match(/^(.+)__vehicle__$/);
-        var workerName = m ? m[1] : slotKey;
+        var workerName = slot.workerName || slot.label;
         boardData = window.AppMain.collectBoardData(workerName);
-        label = workerName + ' 차대비';
+        label = slot.label;
         filename = buildFilename(dateStr, '차대비', workerName);
       }
 
-      tasks.push({ slotKey: slotKey, file: file, boardData: boardData, label: label, filename: filename });
+      tasks.push({ idx: idx, file: file, boardData: boardData, label: label, filename: filename });
     });
 
     if (tasks.length === 0) {
@@ -548,7 +527,7 @@
 
     var promises = tasks.map(function (t) {
       return Compose.compose(t.file, t.boardData).then(function (blob) {
-        return { slotKey: t.slotKey, label: t.label, blob: blob, filename: t.filename };
+        return { idx: t.idx, label: t.label, blob: blob, filename: t.filename };
       });
     });
 
@@ -562,7 +541,7 @@
 
       results.forEach(function (r) {
         var url = URL.createObjectURL(r.blob);
-        _state.composed[r.slotKey] = { blob: r.blob, blobUrl: url, filename: r.filename };
+        _state.composed[r.idx] = { blob: r.blob, blobUrl: url, filename: r.filename, label: r.label };
       });
 
       renderPreviewGrid(results);
@@ -597,7 +576,7 @@
       img.className = 'preview-grid-item__img';
       img.alt = r.label + ' 합성 결과';
 
-      var composed = _state.composed[r.slotKey];
+      var composed = _state.composed[r.idx];
       if (composed && composed.blobUrl) img.src = composed.blobUrl;
 
       div.appendChild(header);
@@ -621,7 +600,7 @@
   //   btn-autofill click → 동기 검증 → GPS fire-and-forget 시작
   //   → change 핸들러 바인딩 → input.click() ← 이 줄이 동기 경로 최하단
   //   → 사용자가 사진 고르는 동안 GPS가 백그라운드로 진행
-  //   → onChange 핸들러 안에서 GPS Promise 결과를 기다린 뒤 슬롯 UI 진입
+  //   → onChange 핸들러 안에서 GPS Promise 결과를 기다린 뒤 카드 UI 진입
   // -------------------------------------------------------
   function runAutofill() {
     if (_state.active) {
@@ -642,7 +621,6 @@
     }
 
     _state.active = true;
-    _state.workers = workers.slice();
 
     var btn = getEl('btn-autofill');
     btn.disabled = true;
@@ -675,7 +653,7 @@
     // change 핸들러를 먼저 바인딩 (동기)
     var filesPromise = step2BindChangeHandler(input);
 
-    // 사진 선택이 완료되면 GPS 결과를 기다린 뒤 슬롯 UI 진입
+    // 사진 선택이 완료되면 GPS 결과를 기다린 뒤 카드 UI 진입
     filesPromise.then(function (files) {
       // 취소 버튼 숨김 (Tier 1/2/3 어느 경로든 resolve 후 항상 숨김)
       var cancelBtnInner = getEl('btn-autofill-cancel');
@@ -691,9 +669,7 @@
 
       // GPS 결과 대기 (사진 고르는 동안 이미 완료됐을 가능성 높음)
       return gpsPromise.then(function () {
-        _state.files = files;
-        _state.thumbUrls = buildThumbUrls(files);
-        step3SlotAssignUI();
+        step3SlotCardUI(files, workers);
 
         btn.disabled = false;
         btn.textContent = '자동 입히기';
@@ -720,7 +696,6 @@
   // -------------------------------------------------------
   function runComposePreview() {
     var projectName = (getEl('project-name') || {}).value || '';
-    var workers = _state.workers;
 
     hideSlotUI();
 
@@ -837,7 +812,7 @@
   // -------------------------------------------------------
   function recordSession() {
     var projectName = (getEl('project-name') || {}).value || '';
-    var workers = _state.workers.slice().sort();
+    var workers = (window.AppMain ? window.AppMain.getSelectedWorkers() : []).slice().sort();
     var office = (getEl('office') || {}).value || '마포용산지사';
     var workplace = ((getEl('workplace') || {}).value || '').trim();
     var state = Storage.getState();
@@ -861,11 +836,10 @@
     if (!hasSomethingComposed()) return;
     _saveInProgress = true;
 
-    var dateStr = (getEl('field-date') || {}).value || '';
     var items = [];
 
-    Object.keys(_state.composed).forEach(function (slotKey) {
-      var c = _state.composed[slotKey];
+    Object.keys(_state.composed).forEach(function (k) {
+      var c = _state.composed[k];
       if (c && c.blob) {
         items.push({ blob: c.blob, filename: c.filename });
       }
@@ -938,16 +912,8 @@
     var openBandBtn = getEl('btn-open-band');
     if (openBandBtn) openBandBtn.addEventListener('click', function () { openBandApp(); });
 
-    var modalCancelBtn = getEl('btn-slot-modal-cancel');
-    if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeSlotModal);
-
-    // 모달 백드롭 탭으로 닫기
-    var backdrop = getEl('slot-modal-backdrop');
-    if (backdrop) {
-      backdrop.addEventListener('click', function (e) {
-        if (e.target === backdrop) closeSlotModal();
-      });
-    }
+    var addBtn = getEl('slot-add-btn');
+    if (addBtn) addBtn.addEventListener('click', addChadaebiSlot);
   }
 
   // -------------------------------------------------------

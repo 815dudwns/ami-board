@@ -104,17 +104,18 @@ async function runTests() {
     // =========================================================
     console.log('\n=== Scenario 2: 합성 완료 후 btn-save-band 활성화 ===');
 
-    // _state.composed에 합성 결과 주입 (Phase F 스키마)
+    // _state.composed에 합성 결과 주입 (Phase F 스키마: idx 키)
     const activatedAfterCompose = await page.evaluate(() => {
       // 더미 Blob
       var blob = new Blob(['fake'], { type: 'image/jpeg' });
       var url = URL.createObjectURL(blob);
 
-      // Phase F: _state.composed[slotKey] = { blob, blobUrl, filename }
+      // Phase F: _state.composed[idx] = { blob, blobUrl, filename, label }
       var state = window.AutoFill._state;
-      state.workers = ['우영준'];
+      state.slots = [{ role: 'worker', label: '작업원', workerName: null }];
+      state.photos = [blob];
       state.composed = {
-        '__workers__': { blob: blob, blobUrl: url, filename: 'board_20260418_작업자_1.jpg' }
+        0: { blob: blob, blobUrl: url, filename: 'board_20260418_작업자_1.jpg', label: '작업원 사진' }
       };
 
       // _hasSomethingComposed → true → btn 활성화

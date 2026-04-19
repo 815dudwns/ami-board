@@ -421,66 +421,11 @@
       }, function () { /* 실패 시 서울 시청 기본값 유지 */ }, { timeout: 5000 });
     }
 
-    // 롱프레스: touchstart + setTimeout(500) + touchmove/touchend 취소
-    bindLongPress(container);
-  }
-
-  function bindLongPress(container) {
-    var timer = null;
-    var moved = false;
-
-    function onPressStart(e) {
-      moved = false;
-      timer = setTimeout(function () {
-        if (!moved) {
-          var coord = getCoordFromEvent(e);
-          if (coord) dropPin(coord.lat, coord.lng);
-        }
-      }, 500);
-    }
-
-    function onPressMove() {
-      moved = true;
-      clearTimeout(timer);
-    }
-
-    function onPressEnd() {
-      clearTimeout(timer);
-    }
-
-    // 터치 (모바일)
-    container.addEventListener('touchstart', onPressStart, { passive: true });
-    container.addEventListener('touchmove', onPressMove, { passive: true });
-    container.addEventListener('touchend', onPressEnd);
-
-    // 마우스 (데스크톱 테스트)
-    container.addEventListener('mousedown', onPressStart);
-    container.addEventListener('mousemove', onPressMove);
-    container.addEventListener('mouseup', onPressEnd);
-    container.addEventListener('mouseleave', onPressEnd);
-  }
-
-  function getCoordFromEvent(e) {
-    if (!_mapState.map) return null;
-    var mapEl = document.getElementById('map-modal-map');
-    var rect = mapEl.getBoundingClientRect();
-
-    var clientX, clientY;
-    if (e.touches && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
-    }
-
-    var x = clientX - rect.left;
-    var y = clientY - rect.top;
-
-    var proj = _mapState.map.getProjection();
-    var point = new kakao.maps.Point(x, y);
-    var latLng = proj.coordsFromContainerPoint(point);
-    return { lat: latLng.getLat(), lng: latLng.getLng() };
+    // 단일 탭: 카카오 click 이벤트로 핀 드롭
+    kakao.maps.event.addListener(_mapState.map, 'click', function (mouseEvent) {
+      var latlng = mouseEvent.latLng;
+      dropPin(latlng.getLat(), latlng.getLng());
+    });
   }
 
   function dropPin(lat, lng) {

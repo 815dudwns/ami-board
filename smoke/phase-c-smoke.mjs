@@ -6,9 +6,10 @@
  *   2. 공사명/작업원 미선택 시 클릭 → 알림 + 중단 (버튼 다시 활성)
  *   3. 공통필드 매치 있을 때 office/workplace 프리필 + 배너 표시
  *   4. 공통필드 매치 없을 때 GPS 경로 (getCurrentPosition 스텁)
- *   5. 파일 입력 트리거 — auto-file-* 에 capture 속성 없음 확인
+ *   5. 파일 입력 트리거 — #auto-file-multi에 capture 속성 없음 확인
  *   6. 합성 미리보기 그리드 렌더 + "저장 + 밴드 열기" 버튼 placeholder 존재
- *   7. console.error 0건
+ *   7. 사업소 select — (자동) + 7개 옵션 + 주소 blur 시 자동 매핑 검증
+ *   8. console.error 0건
  */
 
 import puppeteer from 'puppeteer';
@@ -272,30 +273,20 @@ async function runTests() {
 
     // =========================================================
     // Scenario 5: file inputs에 capture 속성 없음 확인
-    //   Phase F: auto-file-multi (멀티셀렉트) + 보조 UI 확인
+    //   Phase F: auto-file-multi (멀티셀렉트) — 보조 UI는 DOM에서 제거됨
     // =========================================================
     console.log('\n=== Scenario 5: file input capture 속성 없음 ===');
 
     const captureCheck = await page.evaluate(() => {
-      const inputs = [
-        document.getElementById('auto-file-multi'),   // Phase F 신규
-        document.getElementById('file-workers'),       // 보조 UI
-        document.getElementById('file-documents'),     // 보조 UI
-        document.getElementById('file-vehicles')       // 보조 UI
-      ];
+      const autoMultiEl = document.getElementById('auto-file-multi');
 
       const issues = [];
-      inputs.forEach(function (inp) {
-        if (!inp) return;
-        if (inp.hasAttribute('capture')) {
-          issues.push(inp.id + ' has capture');
-        }
-      });
-
-      const autoMulti = !!document.getElementById('auto-file-multi');
+      if (autoMultiEl && autoMultiEl.hasAttribute('capture')) {
+        issues.push('auto-file-multi has capture');
+      }
 
       return {
-        allExist: autoMulti,
+        allExist: !!autoMultiEl,
         noCapture: issues.length === 0,
         issues: issues
       };
@@ -352,13 +343,99 @@ async function runTests() {
     ) ? 'PASS' : 'FAIL';
 
     // =========================================================
-    // Scenario 7: console.error 0건
+    // Scenario 7: 사업소 select — (자동) + 7개 옵션 + 자동 매핑
     // =========================================================
-    console.log('\n=== Scenario 7: console.error 0건 ===');
+    console.log('\n=== Scenario 7: 사업소 select 검증 ===');
+
+    const officeCheck = await page.evaluate(() => {
+      const sel = document.getElementById('field-office');
+      if (!sel || sel.tagName !== 'SELECT') return { exists: false };
+
+      const opts = Array.from(sel.options).map(o => ({ value: o.value, text: o.text }));
+      const hasAuto = opts[0] && opts[0].value === '';
+      const officeOptions = opts.filter(o => o.value !== '');
+      const expectedOffices = [
+        '강북성북지사', '동대문중랑지사', '서대문은평지사', '서울본부직할',
+        '광진성동지사', '마포용산지사', '노원도봉지사'
+      ];
+      const allOfficesPresent = expectedOffices.every(
+        name => officeOptions.some(o => o.value === name)
+      );
+
+      return {
+        exists: true,
+        hasAuto: hasAuto,
+        optionCount: officeOptions.length,
+        allOfficesPresent: allOfficesPresent
+      };
+    });
+
+    console.log('  7a. #field-office select 존재:', officeCheck.exists ? 'PASS' : 'FAIL');
+    console.log('  7b. (자동) 옵션 첫번째:', officeCheck.hasAuto ? 'PASS' : 'FAIL');
+    console.log('  7c. 7개 지사 옵션 모두 존재:', officeCheck.allOfficesPresent ? 'PASS' : `FAIL (${officeCheck.optionCount}개)`);
+
+    // 자동 매핑 검증: 마포구 주소 입력 → blur → 마포용산지사 자동 선택
+    const autoMappingCheck = await page.evaluate(() => {
+      const workplace = document.getElementById('workplace');
+      const sel = document.getElementById('field-office');
+      if (!workplace || !sel) return { mapped: false, error: 'element not found' };
+
+      // 마포구 주소 입력
+      workplace.value = '서울특별시 마포구 합정동 123';
+      workplace.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      return { mapped: sel.value === '마포용산지사', value: sel.value };
+    });
+    console.log('  7d. 마포구 → 마포용산지사 자동 매핑:', autoMappingCheck.mapped ? 'PASS' : `FAIL (got: "${autoMappingCheck.value}")`);
+
+    // 매핑 없는 구 → (자동) 유지 확인
+    const noMappingCheck = await page.evaluate(() => {
+      const workplace = document.getElementById('workplace');
+      const sel = document.getElementById('field-office');
+      if (!workplace || !sel) return { kept: false };
+
+      workplace.value = '서울특별시 영등포구 여의도동 999';
+      workplace.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      return { kept: sel.value === '', value: sel.value };
+    });
+    console.log('  7e. 영등포구(미매핑) → (자동) 유지:', noMappingCheck.kept ? 'PASS' : `FAIL (got: "${noMappingCheck.value}")`);
+
+    // 수동 선택 후 주소 변경해도 유지 확인
+    const manualKeepCheck = await page.evaluate(() => {
+      const workplace = document.getElementById('workplace');
+      const sel = document.getElementById('field-office');
+      if (!workplace || !sel) return { kept: false };
+
+      // 수동 선택
+      sel.value = '노원도봉지사';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // 마포구 주소로 변경해도 수동 선택 유지
+      workplace.value = '서울특별시 마포구 합정동 456';
+      workplace.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      return { kept: sel.value === '노원도봉지사', value: sel.value };
+    });
+    console.log('  7f. 수동 선택 후 주소 변경 → 수동값 유지:', manualKeepCheck.kept ? 'PASS' : `FAIL (got: "${manualKeepCheck.value}")`);
+
+    results['Scenario 7'] = (
+      officeCheck.exists &&
+      officeCheck.hasAuto &&
+      officeCheck.allOfficesPresent &&
+      autoMappingCheck.mapped &&
+      noMappingCheck.kept &&
+      manualKeepCheck.kept
+    ) ? 'PASS' : 'FAIL';
+
+    // =========================================================
+    // Scenario 8: console.error 0건
+    // =========================================================
+    console.log('\n=== Scenario 8: console.error 0건 ===');
     const hasErrors = consoleErrors.length > 0;
     console.log('  에러 수:', hasErrors ? `FAIL (${consoleErrors.length}건)` : 'PASS (0건)');
     if (hasErrors) consoleErrors.forEach(e => console.log(`    - ${e}`));
-    results['Scenario 7'] = !hasErrors ? 'PASS' : 'FAIL';
+    results['Scenario 8'] = !hasErrors ? 'PASS' : 'FAIL';
 
   } catch (err) {
     console.error('테스트 중 예외:', err.message);
@@ -370,7 +447,7 @@ async function runTests() {
   console.log('\n=== 최종 결과 ===');
   Object.entries(results).forEach(([k, v]) => console.log(`${k}: ${v}`));
 
-  const allPass = Object.values(results).every(v => v === 'PASS' || v === 'SKIP');
+  const allPass = Object.values(results).every((v) => v === 'PASS' || v === 'SKIP');
   process.exit(allPass ? 0 : 1);
 }
 

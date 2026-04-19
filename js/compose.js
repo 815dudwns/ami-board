@@ -80,21 +80,35 @@ var Compose = (function () {
     });
   }
 
+  // 비율 상수 (v1 샘플 1920px 기준 역산, EXIF 회전 후 dimension 기준)
+  // fontSize:    22/1920 ≈ 1.146% of longerSide
+  // labelFontSize: 18/1920 ≈ 0.9375%
+  // padding:     10/1920 ≈ 0.521%
+  // rowH:        34/1920 ≈ 1.771%
+  // margin:      16/1920 ≈ 0.833%
+  var RATIO_FONT       = 22 / 1920;   // 1.146%
+  var RATIO_LABEL_FONT = 18 / 1920;   // 0.938%
+  var RATIO_PADDING    = 10 / 1920;   // 0.521%
+  var RATIO_ROW_H      = 34 / 1920;   // 1.771%
+  var RATIO_MARGIN     = 16 / 1920;   // 0.833%
+
   function drawTable(ctx, imgW, imgH, data) {
-    // 표 너비: 긴 쪽 기준 55%
+    // 긴 쪽(longerSide) 기준으로 비율 계산
     var longerSide = Math.max(imgW, imgH);
-    var scale = longerSide / 1920;
+
+    // 표 너비: 이미지 너비의 55%
     var tableW = Math.round(imgW * 0.55);
 
-    // 폰트/패딩 크기를 scale에 맞춤 (최소 10px 보장)
-    var fontSize = Math.max(10, Math.round(22 * scale));
-    var labelFontSize = Math.max(9, Math.round(18 * scale));
-    var padding = Math.max(6, Math.round(10 * scale));
-    var rowH = Math.max(20, Math.round(34 * scale));
+    // 폰트/패딩/행 높이: longerSide 비율 → 최소 픽셀 보장
+    var fontSize      = Math.max(10, Math.round(RATIO_FONT       * longerSide));
+    var labelFontSize = Math.max(9,  Math.round(RATIO_LABEL_FONT * longerSide));
+    var padding       = Math.max(6,  Math.round(RATIO_PADDING    * longerSide));
+    var rowH          = Math.max(20, Math.round(RATIO_ROW_H      * longerSide));
+    var margin        = Math.max(8,  Math.round(RATIO_MARGIN     * longerSide));
+
     var labelColW = Math.round(tableW * 0.28);
 
     var tableH = rowH * TABLE_ROWS.length;
-    var margin = Math.max(8, Math.round(16 * scale));
 
     var tableX = margin;
     var tableY = imgH - tableH - margin;
@@ -105,7 +119,7 @@ var Compose = (function () {
 
     // 테두리
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = Math.max(1, Math.round(1.5 * scale));
+    ctx.lineWidth = Math.max(1, Math.round(1.5 / 1920 * longerSide));
     ctx.strokeRect(tableX, tableY, tableW, tableH);
 
     TABLE_ROWS.forEach(function (row, i) {

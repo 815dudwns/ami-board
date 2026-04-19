@@ -112,11 +112,70 @@
     }
   }
 
+  // 사업소 수동 선택 플래그 (페이지 새로고침 시 초기화)
+  var _officeManual = false;
+
   // -------------------------------------------------------
-  // B-2: 사업소 고정
+  // B-2: 사업소 select 초기화 (자동 매핑 + 수동 선택)
   // -------------------------------------------------------
   function initOffice() {
-    Storage.setLastSelected({ office: '마포용산지사' });
+    var sel = document.getElementById('field-office');
+    if (!sel) return;
+
+    // options 구성: "(자동)" + OFFICE_LIST
+    sel.innerHTML = '';
+    var autoOpt = document.createElement('option');
+    autoOpt.value = '';
+    autoOpt.textContent = '(자동)';
+    sel.appendChild(autoOpt);
+
+    window.OfficeMapping.OFFICE_LIST.forEach(function (name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+
+    // lastSelected.office 복원 (수동 선택 기록 있으면 복원)
+    var state = Storage.getState();
+    var savedOffice = state.lastSelected && state.lastSelected.office;
+    if (savedOffice && window.OfficeMapping.OFFICE_LIST.indexOf(savedOffice) !== -1) {
+      sel.value = savedOffice;
+      // 자동 매핑 결과가 저장된 것인지 수동인지 구분 불가 → 일단 자동 모드 유지
+      _officeManual = false;
+    }
+
+    // 수동 선택 이벤트
+    sel.addEventListener('change', function () {
+      if (sel.value === '') {
+        // "(자동)" 재선택 → 자동 모드 복귀 + 현재 주소로 재평가
+        _officeManual = false;
+        var workplace = document.getElementById('workplace').value;
+        applyOfficeAutoMap(workplace);
+      } else {
+        _officeManual = true;
+        Storage.setLastSelected({ office: sel.value });
+      }
+    });
+  }
+
+  /**
+   * 주소에서 구 추출 → 사업소 자동 매핑.
+   * 수동 모드(_officeManual=true)면 아무것도 안 함.
+   */
+  function applyOfficeAutoMap(address) {
+    if (_officeManual) return;
+    var sel = document.getElementById('field-office');
+    if (!sel) return;
+
+    var mapped = window.OfficeMapping.officeFromAddress(address);
+    if (mapped) {
+      sel.value = mapped;
+      Storage.setLastSelected({ office: mapped });
+    } else {
+      sel.value = '';
+      // 매핑 결과 없으면 "(자동)" 유지 — 사용자가 수동 선택해야 함
+    }
   }
 
   // -------------------------------------------------------
@@ -301,6 +360,10 @@
       Storage.setLastSelected({ workplace: this.value });
     });
 
+    workplaceEl.addEventListener('blur', function () {
+      applyOfficeAutoMap(this.value);
+    });
+
     gpsBtn.addEventListener('click', requestGPS);
   }
 
@@ -330,6 +393,7 @@
           if (address) {
             workplaceEl.value = address;
             Storage.setLastSelected({ workplace: address });
+            applyOfficeAutoMap(address);
           } else {
             statusEl.textContent = 'GPS 주소 변환 실패. 수동 입력하세요.';
           }
@@ -460,6 +524,7 @@
       workplace: address,
       workplaceCoord: _mapState.pendingCoord
     });
+    applyOfficeAutoMap(address);
 
     closeMapModal();
   }
@@ -486,7 +551,7 @@
     var banner = document.getElementById('match-banner');
     if (matched) {
       // 프리필
-      document.getElementById('office').value = matched.office || '마포용산지사';
+      document.getElementById('field-office').value = matched.office || '마포용산지사';
       document.getElementById('workplace').value = matched.workplace || '';
       Storage.setLastSelected({
         office: matched.office || '마포용산지사',
@@ -501,7 +566,7 @@
 
   function bindMatchBanner() {
     document.getElementById('btn-match-reset').addEventListener('click', function () {
-      document.getElementById('office').value = '마포용산지사';
+      document.getElementById('field-office').value = '마포용산지사';
       document.getElementById('workplace').value = '';
       Storage.setLastSelected({ workplace: '', workplaceCoord: null });
       document.getElementById('match-banner').style.display = 'none';
@@ -533,7 +598,7 @@
 
     return {
       projectName: (document.getElementById('project-name') || {}).value || '',
-      office: document.getElementById('office').value || '마포용산지사',
+      office: document.getElementById('field-office').value || '',
       workplace: document.getElementById('workplace').value.trim(),
       content: getContentValue(),
       workers: workersStr,
@@ -545,23 +610,29 @@
   // 사진 섹션 바인딩 (Phase C에서 확장 예정)
   // -------------------------------------------------------
   function bindPhotoEvents() {
-    document.getElementById('file-workers').addEventListener('change', function (e) {
+    // 보조 사진 UI는 DOM에서 제거됨 — null guard 처리
+    var fileWorkers = document.getElementById('file-workers');
+    if (fileWorkers) fileWorkers.addEventListener('change', function (e) {
       handleSinglePhoto(e.target.files[0], 'workers');
       e.target.value = '';
     });
-    document.getElementById('btn-delete-workers').addEventListener('click', function () {
+    var btnDeleteWorkers = document.getElementById('btn-delete-workers');
+    if (btnDeleteWorkers) btnDeleteWorkers.addEventListener('click', function () {
       deleteSinglePhoto('workers');
     });
 
-    document.getElementById('file-documents').addEventListener('change', function (e) {
+    var fileDocuments = document.getElementById('file-documents');
+    if (fileDocuments) fileDocuments.addEventListener('change', function (e) {
       handleSinglePhoto(e.target.files[0], 'documents');
       e.target.value = '';
     });
-    document.getElementById('btn-delete-documents').addEventListener('click', function () {
+    var btnDeleteDocuments = document.getElementById('btn-delete-documents');
+    if (btnDeleteDocuments) btnDeleteDocuments.addEventListener('click', function () {
       deleteSinglePhoto('documents');
     });
 
-    document.getElementById('file-vehicles').addEventListener('change', function (e) {
+    var fileVehicles = document.getElementById('file-vehicles');
+    if (fileVehicles) fileVehicles.addEventListener('change', function (e) {
       var files = Array.prototype.slice.call(e.target.files);
       files.forEach(function (file) { addVehiclePhoto(file); });
       e.target.value = '';
@@ -657,7 +728,9 @@
   // 합성 미리보기
   // -------------------------------------------------------
   function bindComposeBtn() {
-    document.getElementById('btn-compose').addEventListener('click', runCompose);
+    // btn-compose는 보조 합성 미리보기 카드 제거로 DOM에 없음 — null guard
+    var composeBtn = document.getElementById('btn-compose');
+    if (composeBtn) composeBtn.addEventListener('click', runCompose);
   }
 
   function buildComposeTasks() {
@@ -805,7 +878,7 @@
   function applySession(session) {
     if (session.commonFields) {
       if (session.commonFields.office) {
-        document.getElementById('office').value = session.commonFields.office;
+        document.getElementById('field-office').value = session.commonFields.office;
         Storage.setLastSelected({ office: session.commonFields.office });
       }
       if (session.commonFields.workplace) {

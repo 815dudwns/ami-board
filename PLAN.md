@@ -70,7 +70,7 @@ interface StateV2 {
 | 필드 | 소스 | 수정 | 비고 |
 |---|---|---|---|
 | 공사명 | `<select>` from `projectNames` | ✅ | 기본값 = `lastSelected.projectName` |
-| 사업소 | "마포용산지사" **고정(테스트)** | ❌ | 실운영 시 GPS 주소 기반 자동 매칭 |
+| 사업소 | `<select>` — (자동) + 7개 지사 자동 매핑 + 수동 선택 | ✅ | 구(區) 기반 `office-mapping.js` |
 | 작업장소 | 입력 칸 + GPS 버튼 + 지도 버튼 + 자동 입히기 | ✅ | |
 | 내용 | **토글 버튼 2개** `[오전]` `[오후]`: "작업전안전회의 오전" / "작업전안전회의 오후" | ✅ | 기본값 = 현재 시각 기반 자동 (12시 이전=오전). `aria-pressed` 라디오 동작 |
 | 작업일자 | `<input type="date">` 오늘 자동 YYYY-MM-DD | ✅ | 자정 경과 시 자동 갱신(visibilitychange/focus/pageshow+setInterval). 수동 변경 시 갱신 중지 |
@@ -201,7 +201,7 @@ v1 `compose.js` 재사용. 좌하단 6행 표, Noto Sans KR, EXIF 처리, JPEG 9
 
 ## 9. 미확정 (추후)
 
-- 사업소 주소 자동 매칭 데이터 (7개 지사 관할 구역 매핑) — 현재 마포용산 고정
+- ~~사업소 주소 자동 매칭 데이터 (7개 지사 관할 구역 매핑)~~ ✅ 완료 (`office-mapping.js`, 자동 매핑 + 수동 선택)
 - 공사명 연도 자동 롤오버 — 설정에서 수동 관리로 충분
 - 밴드 앱 딥링크 파라미터 (사진 첨부 가능 여부) — iOS/Android 실기 확인
 

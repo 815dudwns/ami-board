@@ -162,6 +162,26 @@
   }
 
   // -------------------------------------------------------
+  // 사진 전체 초기화: photos[] 전부 null, slots[] 구조 유지
+  // -------------------------------------------------------
+  function clearAllPhotos() {
+    for (var i = 0; i < _state.photos.length; i++) {
+      invalidateThumbUrl(i);
+      _state.photos[i] = null;
+    }
+    // 합성 결과도 초기화
+    Object.keys(_state.composed).forEach(function (k) {
+      var c = _state.composed[k];
+      if (c && c.blobUrl) URL.revokeObjectURL(c.blobUrl);
+    });
+    _state.composed = {};
+    renderCards();
+    hidePreviewGrid();
+    updateComposePreviewBtn();
+    updateSaveBandBtn();
+  }
+
+  // -------------------------------------------------------
   // X 버튼: 차대비 슬롯 제거
   // -------------------------------------------------------
   function removeChadaebiSlot(idx) {
@@ -279,10 +299,11 @@
       );
 
       if (matched) {
-        getEl('office').value = matched.office || '마포용산지사';
+        var officeEl = getEl('field-office');
+        if (officeEl) officeEl.value = matched.office || '';
         getEl('workplace').value = matched.workplace || '';
         Storage.setLastSelected({
-          office: matched.office || '마포용산지사',
+          office: matched.office || '',
           workplace: matched.workplace || '',
           workplaceCoord: matched.workplaceCoord || null
         });
@@ -457,24 +478,68 @@
   }
 
   // -------------------------------------------------------
-  // 단계 3: 슬롯 카드 UI 초기 표시
+  // 단계 3: 슬롯 카드 UI 초기 표시 / 재클릭 시 append
+  //
+  // 처음 호출 시: slots 초기화 + photos 빌드
+  // 슬롯이 이미 있을 때(재선택): 기존 photos에 append
+  //   - 빈 슬롯(null)부터 채우고, 남으면 나중에 추가
+  //   - 총 6장 초과 시 앞에서부터 6장만, 경고 표시
   // -------------------------------------------------------
   function step3SlotCardUI(files, workers) {
-    _state.slots = buildInitialSlots(workers);
+    var isFirstRun = (_state.slots.length === 0);
 
-    // 최대 6장 제한
-    var limitedFiles = files;
-    if (files.length > MAX_SLOTS) {
-      alert('최대 ' + MAX_SLOTS + '장까지 선택 가능합니다. 앞 ' + MAX_SLOTS + '장만 사용합니다.');
-      limitedFiles = files.slice(0, MAX_SLOTS);
-    }
+    if (isFirstRun) {
+      // 최초 실행: slots + photos 전체 초기화
+      _state.slots = buildInitialSlots(workers);
 
-    // photos: 슬롯 수만큼 초기화 (선택한 파일 앞에서부터 채움)
-    _state.photos = [];
-    _state.thumbUrls = [];
-    for (var i = 0; i < _state.slots.length; i++) {
-      _state.photos.push(limitedFiles[i] || null);
-      _state.thumbUrls.push(null);
+      var limitedFiles = files;
+      if (files.length > MAX_SLOTS) {
+        alert('최대 ' + MAX_SLOTS + '장까지 선택 가능합니다. 앞 ' + MAX_SLOTS + '장만 사용합니다.');
+        limitedFiles = files.slice(0, MAX_SLOTS);
+      }
+
+      _state.photos = [];
+      _state.thumbUrls = [];
+      for (var i = 0; i < _state.slots.length; i++) {
+        _state.photos.push(limitedFiles[i] || null);
+        _state.thumbUrls.push(null);
+      }
+    } else {
+      // 재선택: 기존 photos에 append
+      var incoming = files.slice();
+
+      // 1) 빈 슬롯(null)부터 채움
+      for (var j = 0; j < _state.photos.length && incoming.length > 0; j++) {
+        if (!_state.photos[j]) {
+          invalidateThumbUrl(j);
+          _state.photos[j] = incoming.shift();
+          _state.thumbUrls[j] = null;
+        }
+      }
+
+      // 2) 아직 남은 파일 있으면 뒤에 붙이되 MAX_SLOTS 초과 차단
+      if (incoming.length > 0) {
+        var available = MAX_SLOTS - _state.photos.length;
+        if (available <= 0) {
+          alert('최대 ' + MAX_SLOTS + '장 한도에 이미 도달했습니다. 일부 사진은 추가되지 않았습니다.');
+        } else {
+          if (incoming.length > available) {
+            alert('최대 ' + MAX_SLOTS + '장 한도로 인해 ' + (incoming.length - available) + '장은 추가되지 않았습니다. 앞 ' + available + '장만 추가합니다.');
+            incoming = incoming.slice(0, available);
+          }
+          incoming.forEach(function (f) {
+            _state.photos.push(f);
+            _state.thumbUrls.push(null);
+          });
+        }
+      }
+
+      // photos 길이가 slots보다 길어진 경우 slots 확장 (익명 차대비)
+      while (_state.slots.length < _state.photos.length && _state.slots.length < MAX_SLOTS) {
+        var existingChadaebi = _state.slots.filter(function (s) { return s.role === 'chadaebi'; });
+        var n = existingChadaebi.length + 1;
+        _state.slots.push({ role: 'chadaebi', label: '차대비 ' + n, workerName: null });
+      }
     }
 
     renderCards();
@@ -485,6 +550,13 @@
   // 단계 4: 합성
   // -------------------------------------------------------
   function step4Compose(projectName) {
+    // 사업소 선택 검증
+    var officeEl = getEl('field-office');
+    if (officeEl && !officeEl.value) {
+      alert('사업소를 선택하세요.');
+      return Promise.resolve();
+    }
+
     var workers = _state.slots
       .filter(function (s) { return s.role !== 'document'; })
       .map(function (s) { return s.label; });
@@ -813,7 +885,7 @@
   function recordSession() {
     var projectName = (getEl('project-name') || {}).value || '';
     var workers = (window.AppMain ? window.AppMain.getSelectedWorkers() : []).slice().sort();
-    var office = (getEl('office') || {}).value || '마포용산지사';
+    var office = (getEl('field-office') || {}).value || '';
     var workplace = ((getEl('workplace') || {}).value || '').trim();
     var state = Storage.getState();
     var coord = (state.lastSelected && state.lastSelected.workplaceCoord) || undefined;
@@ -914,6 +986,9 @@
 
     var addBtn = getEl('slot-add-btn');
     if (addBtn) addBtn.addEventListener('click', addChadaebiSlot);
+
+    var clearPhotosBtn = getEl('slot-clear-photos-btn');
+    if (clearPhotosBtn) clearPhotosBtn.addEventListener('click', clearAllPhotos);
   }
 
   // -------------------------------------------------------

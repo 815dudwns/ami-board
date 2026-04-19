@@ -51,11 +51,12 @@
         <select id="project-name"></select>
       </div>
 
-      <!-- B-2: 사업소 고정 (테스트 단계) -->
+      <!-- §5.1 사업소: 자동 매핑(7개 지사) + 수동 선택 -->
       <div class="form-row">
-        <label for="office">사업소 <span class="office-fixed-hint">(테스트 단계 고정값)</span></label>
-        <input type="text" id="office" value="마포용산지사" readonly disabled>
-        <!-- TODO: Phase B+ office auto-match by district -->
+        <label for="field-office">사업소</label>
+        <select id="field-office" class="office-auto-flag">
+          <option value="">(자동)</option>
+        </select>
       </div>
 
       <!-- B-3: 작업장소 + GPS + 지도 버튼 -->
@@ -125,6 +126,9 @@
         <!-- + 버튼 (Sortable 컨테이너 바깥) -->
         <button class="btn-secondary btn-sm slot-add-btn" id="slot-add-btn" type="button">+ 차대비 추가</button>
 
+        <!-- 사진 전체 초기화 버튼 -->
+        <button class="btn-secondary btn-sm" id="slot-clear-photos-btn" type="button" style="margin-top:8px;">사진 전체 초기화</button>
+
         <!-- 합성 미리보기 버튼 -->
         <button class="btn-primary btn-autofill" id="btn-compose-preview" type="button" disabled style="margin-top:12px;">합성 미리보기</button>
       </div>
@@ -139,59 +143,8 @@
       </div>
     </div>
 
-    <!-- Phase 2: 사진 3섹션 -->
-    <div class="card" id="section-photos">
-      <h2>사진 업로드 (보조)</h2>
-
-      <!-- 작업자 사진 -->
-      <div class="photo-section">
-        <h3>작업자 사진 (1장)</h3>
-        <div class="photo-controls">
-          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-            사진 선택
-            <input type="file" id="file-workers" accept="image/*" style="display:none;">
-          </label>
-          <button class="btn-danger btn-sm" id="btn-delete-workers" style="display:none;" type="button">삭제</button>
-        </div>
-        <div class="preview-wrap" id="preview-workers">
-          <span class="empty-hint">사진 없음</span>
-        </div>
-      </div>
-
-      <hr>
-
-      <!-- 서류 사진 -->
-      <div class="photo-section">
-        <h3>서류 사진 (1장)</h3>
-        <div class="photo-controls">
-          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-            사진 선택
-            <input type="file" id="file-documents" accept="image/*" style="display:none;">
-          </label>
-          <button class="btn-danger btn-sm" id="btn-delete-documents" style="display:none;" type="button">삭제</button>
-        </div>
-        <div class="preview-wrap" id="preview-documents">
-          <span class="empty-hint">사진 없음</span>
-        </div>
-      </div>
-
-      <hr>
-
-      <!-- 차대비 사진 -->
-      <div class="photo-section">
-        <h3>차대비 사진 (0장 이상, 개인별 1명)</h3>
-        <div class="photo-controls">
-          <label class="btn-secondary btn-sm" style="display:inline-block; cursor:pointer;">
-            사진 추가
-            <input type="file" id="file-vehicles" accept="image/*" multiple style="display:none;">
-          </label>
-        </div>
-        <div id="vehicle-list"></div>
-      </div>
-    </div>
-
-    <!-- Phase 5: 조 저장/불러오기 -->
-    <div class="card" id="section-crews">
+    <!-- Phase 5: 조 저장/불러오기 (v1 호환 — CSS 숨김 상태, DOM 유지) -->
+    <div class="card" id="section-crews" style="display:none;">
       <h2>조 관리</h2>
       <div class="crew-actions">
         <button class="btn-secondary btn-sm" id="btn-save-crew" type="button">현재 작업원 조 저장</button>
@@ -201,13 +154,6 @@
         <button class="btn-secondary btn-sm" id="btn-load-crew" type="button">불러오기</button>
       </div>
       <div id="crew-list" class="crew-list"></div>
-    </div>
-
-    <!-- Phase 3: 합성 미리보기 -->
-    <div class="card" id="section-compose">
-      <h2>합성 미리보기</h2>
-      <button class="btn-primary" id="btn-compose" type="button">합성 미리보기</button>
-      <div class="compose-result-area" id="compose-result"></div>
     </div>
 
   </section>
@@ -260,6 +206,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/office-mapping.js"></script>
 <script src="js/compose.js"></script>
 <script>
   if (typeof kakao !== 'undefined' && kakao.maps) {

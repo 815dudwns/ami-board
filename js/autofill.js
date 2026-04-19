@@ -328,12 +328,12 @@
 
   // -------------------------------------------------------
   // 단계 2: 멀티셀렉트 (1회)
+  //   iOS/Safari user gesture chain 보존을 위해
+  //   이 함수는 change 핸들러 바인딩만 수행하고 Promise를 반환.
+  //   실제 input.click()은 호출자(runAutofill)가 동기 경로에서 직접 호출.
   // -------------------------------------------------------
-  function step2MultiSelect() {
+  function step2BindChangeHandler(input) {
     return new Promise(function (resolve) {
-      var input = getEl('auto-file-multi');
-      if (!input) { resolve([]); return; }
-
       // 이전 핸들러 해제
       if (input._autoHandler) {
         input.removeEventListener('change', input._autoHandler);
@@ -350,8 +350,16 @@
 
       input.addEventListener('change', onChange);
       input._autoHandler = onChange;
-      input.click();
     });
+  }
+
+  // 하위 호환 래퍼 (스모크 테스트·외부 코드가 step2MultiSelect 참조 시 대비)
+  function step2MultiSelect() {
+    var input = getEl('auto-file-multi');
+    if (!input) return Promise.resolve([]);
+    var p = step2BindChangeHandler(input);
+    input.click();
+    return p;
   }
 
   // -------------------------------------------------------
@@ -523,6 +531,12 @@
 
   // -------------------------------------------------------
   // 메인 플로우
+  //
+  // iOS/Safari user gesture chain 보존 전략:
+  //   btn-autofill click → 동기 검증 → GPS fire-and-forget 시작
+  //   → change 핸들러 바인딩 → input.click() ← 이 줄이 동기 경로 최하단
+  //   → 사용자가 사진 고르는 동안 GPS가 백그라운드로 진행
+  //   → onChange 핸들러 안에서 GPS Promise 결과를 기다린 뒤 슬롯 UI 진입
   // -------------------------------------------------------
   function runAutofill() {
     if (_state.active) {
@@ -549,18 +563,41 @@
     btn.disabled = true;
     btn.textContent = '진행 중...';
 
-    step1CommonFields(projectName, workers)
-      .then(function () {
-        return step2MultiSelect();
-      })
-      .then(function (files) {
-        if (!files || files.length === 0) {
-          // 사진 미선택 → 중단
-          btn.disabled = false;
-          btn.textContent = '자동 입히기';
-          _state.active = false;
-          return;
-        }
+    // GPS/매치를 fire-and-forget으로 먼저 시작 (await 없이 Promise만 보관)
+    var gpsPromise = step1CommonFields(projectName, workers);
+
+    // input 확인
+    var input = getEl('auto-file-multi');
+    if (!input) {
+      // input 없으면 GPS만 완료 후 마무리
+      gpsPromise.then(function () {
+        btn.disabled = false;
+        btn.textContent = '자동 입히기';
+        _state.active = false;
+      }).catch(function (err) {
+        console.error('autofill error:', err);
+        btn.disabled = false;
+        btn.textContent = '자동 입히기';
+        _state.active = false;
+      });
+      return;
+    }
+
+    // change 핸들러를 먼저 바인딩 (동기)
+    var filesPromise = step2BindChangeHandler(input);
+
+    // 사진 선택이 완료되면 GPS 결과를 기다린 뒤 슬롯 UI 진입
+    filesPromise.then(function (files) {
+      if (!files || files.length === 0) {
+        // 사진 미선택 → GPS도 취소 상태로 두고 중단
+        _state.active = false;
+        btn.disabled = false;
+        btn.textContent = '자동 입히기';
+        return;
+      }
+
+      // GPS 결과 대기 (사진 고르는 동안 이미 완료됐을 가능성 높음)
+      return gpsPromise.then(function () {
         _state.files = files;
         _state.thumbUrls = buildThumbUrls(files);
         step3SlotAssignUI();
@@ -568,14 +605,19 @@
         btn.disabled = false;
         btn.textContent = '자동 입히기';
         _state.active = false;
-      })
-      .catch(function (err) {
-        console.error('autofill error:', err);
-        btn.disabled = false;
-        btn.textContent = '자동 입히기';
-        _state.active = false;
-        alert('자동 입히기 중 오류가 발생했습니다: ' + err.message);
       });
+    }).catch(function (err) {
+      console.error('autofill error:', err);
+      btn.disabled = false;
+      btn.textContent = '자동 입히기';
+      _state.active = false;
+      alert('자동 입히기 중 오류가 발생했습니다: ' + err.message);
+    });
+
+    // ★ user gesture chain 핵심: 동기 경로 최하단에서 input.click() 호출
+    //   위의 .then() 등록이 완료된 직후, 이 줄이 실행될 때까지
+    //   어떠한 await/microtask 경계도 없음.
+    input.click();
   }
 
   // -------------------------------------------------------

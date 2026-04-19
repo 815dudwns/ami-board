@@ -887,13 +887,9 @@
       // S.browser_fallback_url 미포함으로 band.us 이동 차단.
       window.location.href = 'intent://share#Intent;package=com.nhn.android.band;scheme=band;end';
     } else {
-      // iOS (및 기타): hidden iframe으로 딥링크 시도 → 페이지 이동 없음.
-      // 밴드 앱 설치 시 앱 전환, 미설치 시 Safari 조용히 실패.
-      var iframe = document.createElement('iframe');
-      iframe.style.cssText = 'display:none;width:0;height:0;border:0;';
-      iframe.src = 'bandapp://';
-      document.body.appendChild(iframe);
-      setTimeout(function () { iframe.remove(); }, 1000);
+      // iOS: 최신 Safari는 hidden iframe 딥링크를 차단. 직접 이동 방식 사용.
+      // 밴드 앱 설치 시 앱 전환, 미설치 시 "페이지 열 수 없음" 얼럿.
+      window.location.href = 'bandapp://';
     }
   }
 

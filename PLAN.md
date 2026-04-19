@@ -93,12 +93,19 @@ interface StateV2 {
 ### 5.4 "자동 입히기" 통합 플로우 + 완전 초기화 (Phase E/F 개편)
 
 **"초기화" 버튼 (`#btn-autofill-reset-full`)**: 저장 완료 후 노출. 탭 시 자동입히기 + 폼 필드 완전 리셋:
-- `_state.active = false`, `photos[]` 비움, `slots[]` 작업원 체크 기준 재생성 (기본 상태), 합성 결과물(`_state.composed`) 폐기
-- 슬롯 UI 숨김, "자동 입히기" 버튼 활성화 상태 복귀, "밴드 열기" 버튼 숨김
+- `_state.active = false`, `photos[]` 비움, `slots[]` 빈 배열 유지 (다음 자동입히기 시 isFirstRun=true 분기로 재생성), 합성 결과물(`_state.composed`) 폐기
+- 슬롯 UI 숨김, "자동 입히기" 버튼 표시 상태 복귀(`updateAutofillButtons()` 호출), "밴드 열기" 버튼 숨김
 - **작업장소 초기화** (`#field-workplace` value='', `workplaceCoord` clear)
 - **오전/오후 재설정**: 현재 시각 기준 (9시 이전=오전) 다시 적용
 - **날짜 재설정**: 오늘 YYYY-MM-DD, 수동 변경 플래그 리셋
 - confirm() 없이 즉시 실행
+
+**"자동 입히기" 버튼 동적 전환** (`#autofill-actions` 컨테이너):
+- **사진 없음** (`_state.photos.some(p=>!!p) === false`): `#btn-autofill` 표시, `#autofill-actions-loaded` 숨김
+- **사진 있음**: `#btn-autofill` 숨김, `#autofill-actions-loaded` 표시
+  - `#btn-add-photos` (사진 추가): 멀티셀렉트 재실행, GPS 없이 append 분기 (`step3SlotCardUI` isFirstRun=false)
+  - `#slot-clear-photos-btn` (사진 초기화): `clearAllPhotos()` — photos만 비우고 slots 구조 유지
+- 전환 함수 `updateAutofillButtons()`: `resetState()`, `clearAllPhotos()`, `step3SlotCardUI()`, `init()` 시점에 호출
 
 ### 5.4b "자동 입히기" 통합 플로우 (Phase E 개편)
 

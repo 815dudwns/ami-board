@@ -111,9 +111,15 @@
     <!-- Phase F: 자동 입히기 -->
     <div class="card" id="section-autofill">
       <h2>자동 입히기</h2>
-      <button class="btn-primary btn-autofill" id="btn-autofill" type="button">자동 입히기</button>
-      <!-- Tier 3: 수동 취소 버튼 — 피커 취소 감지 실패 시 최후의 보루 -->
-      <button class="btn-secondary btn-sm" id="btn-autofill-cancel" type="button" style="display:none; margin-left:8px;">취소</button>
+      <div id="autofill-actions">
+        <button class="btn-primary btn-autofill" id="btn-autofill" type="button">자동 입히기</button>
+        <!-- Tier 3: 수동 취소 버튼 — 피커 취소 감지 실패 시 최후의 보루 -->
+        <button class="btn-secondary btn-sm" id="btn-autofill-cancel" type="button" style="display:none; margin-left:8px;">취소</button>
+        <div id="autofill-actions-loaded" style="display:none;">
+          <button class="btn-secondary" id="btn-add-photos" type="button">사진 추가</button>
+          <button class="btn-secondary" id="slot-clear-photos-btn" type="button">사진 초기화</button>
+        </div>
+      </div>
 
       <!-- 멀티셀렉트 hidden file input (capture 속성 없음 — photo_upload_policy.md) -->
       <input type="file" id="auto-file-multi" accept="image/*" multiple style="display:none;">
@@ -125,8 +131,7 @@
         <!-- + 버튼 (Sortable 컨테이너 바깥) -->
         <button class="btn-secondary btn-sm slot-add-btn" id="slot-add-btn" type="button">+ 차대비 추가</button>
 
-        <!-- 사진 전체 초기화 버튼 -->
-        <button class="btn-secondary btn-sm" id="slot-clear-photos-btn" type="button" style="margin-top:8px;">사진 전체 초기화</button>
+        <!-- 사진 전체 초기화 버튼 → autofill-actions-loaded로 이동, 여기선 제거 -->
 
         <!-- 합성 미리보기 버튼 -->
         <button class="btn-primary btn-autofill" id="btn-compose-preview" type="button" disabled style="margin-top:12px;">합성 미리보기</button>
@@ -206,17 +211,17 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-<script src="js/storage.js?v=20260419c"></script>
-<script src="js/office-mapping.js?v=20260419c"></script>
-<script src="js/compose.js?v=20260419c"></script>
+<script src="js/storage.js?v=20260419d"></script>
+<script src="js/office-mapping.js?v=20260419d"></script>
+<script src="js/compose.js?v=20260419d"></script>
 <script>
   if (typeof kakao !== 'undefined' && kakao.maps) {
     kakao.maps.load(function () {});
   }
 </script>
-<script src="js/router.js?v=20260419c"></script>
-<script src="js/settings.js?v=20260419c"></script>
-<script src="js/app.js?v=20260419c"></script>
-<script src="js/autofill.js?v=20260419c"></script>
+<script src="js/router.js?v=20260419d"></script>
+<script src="js/settings.js?v=20260419d"></script>
+<script src="js/app.js?v=20260419d"></script>
+<script src="js/autofill.js?v=20260419d"></script>
 </body>
 </html>

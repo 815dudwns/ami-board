@@ -91,6 +91,27 @@
       autofillBtn.disabled = false;
       autofillBtn.textContent = '자동 입히기';
     }
+
+    // 버튼 전환: 사진 없음 상태로 복귀
+    updateAutofillButtons();
+  }
+
+  // -------------------------------------------------------
+  // 버튼 상태 전환: 사진 유무에 따라 자동입히기 / 사진추가+초기화 전환
+  //   Gate: _state.photos.some(p => !!p)  (빈 슬롯 null 포함 배열 처리)
+  // -------------------------------------------------------
+  function updateAutofillButtons() {
+    var hasPhoto = _state.photos.some(function (p) { return !!p; });
+    var single = getEl('btn-autofill');
+    var loaded = getEl('autofill-actions-loaded');
+    if (!single || !loaded) return;
+    if (hasPhoto) {
+      single.style.display = 'none';
+      loaded.style.display = 'block';
+    } else {
+      single.style.display = '';
+      loaded.style.display = 'none';
+    }
   }
 
   // -------------------------------------------------------
@@ -190,6 +211,7 @@
     hidePreviewGrid();
     updateComposePreviewBtn();
     updateSaveBandBtn();
+    updateAutofillButtons();
   }
 
   // -------------------------------------------------------
@@ -555,6 +577,7 @@
 
     renderCards();
     showSlotUI();
+    updateAutofillButtons();
   }
 
   // -------------------------------------------------------
@@ -1004,15 +1027,33 @@
     var clearPhotosBtn = getEl('slot-clear-photos-btn');
     if (clearPhotosBtn) clearPhotosBtn.addEventListener('click', clearAllPhotos);
 
+    // 사진 추가 버튼: 슬롯 있는 상태에서 멀티셀렉트 재실행 (GPS 없이)
+    var addPhotosBtn = getEl('btn-add-photos');
+    if (addPhotosBtn) {
+      addPhotosBtn.addEventListener('click', function () {
+        var input = getEl('auto-file-multi');
+        if (!input) return;
+        var workers = window.AppMain ? window.AppMain.getSelectedWorkers() : [];
+
+        var filesPromise = step2BindChangeHandler(input);
+        filesPromise.then(function (files) {
+          if (!files || files.length === 0) return;
+          step3SlotCardUI(files, workers);
+        });
+
+        // ★ user gesture chain: 동기 경로 최하단에서 click
+        input.click();
+      });
+    }
+
     var fullResetBtn = getEl('btn-autofill-reset-full');
     if (fullResetBtn) fullResetBtn.addEventListener('click', function () {
-      var workers = window.AppMain ? window.AppMain.getSelectedWorkers() : [];
-      // 자동입히기 상태 리셋
+      // 자동입히기 상태 완전 리셋 (_state.slots=[], photos=[], composed={})
+      // resetState() 내부에서 hideSlotUI, hidePreviewGrid, updateAutofillButtons 호출
       resetState();
-      // slots를 작업원 기준 기본 상태로 재생성
-      _state.slots = buildInitialSlots(workers);
-      _state.photos = _state.slots.map(function () { return null; });
-      _state.thumbUrls = _state.slots.map(function () { return null; });
+      // 다음 자동입히기 시 첫 실행 분기로 진입하도록 slots/photos를 빈 배열로 유지
+      // (buildInitialSlots 재호출 불필요 — runAutofill에서 isFirstRun=true 로 처리)
+
       // 폼 필드 리셋 (작업장소, 오전/오후, 날짜)
       if (window.AppMain && window.AppMain.resetFormFields) {
         window.AppMain.resetFormFields();
@@ -1025,6 +1066,8 @@
   // -------------------------------------------------------
   function init() {
     bindEvents();
+    // 페이지 로드 시 초기 버튼 상태 설정 (사진 없음 → btn-autofill 표시)
+    updateAutofillButtons();
   }
 
   if (document.readyState === 'loading') {

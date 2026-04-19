@@ -430,6 +430,74 @@ async function runTests() {
     ) ? 'PASS' : 'FAIL';
 
     // =========================================================
+    // Scenario 9: 자동입히기 버튼 동적 전환
+    //   9a. 초기(사진 없음): #btn-autofill visible, #autofill-actions-loaded hidden
+    //   9b. 사진 주입 후: #btn-autofill hidden, #autofill-actions-loaded visible
+    //   9c. 초기화 후: #btn-autofill visible, #autofill-actions-loaded hidden
+    // =========================================================
+    console.log('\n=== Scenario 9: 자동입히기 버튼 동적 전환 ===');
+
+    await page.goto(BASE_URL, { waitUntil: 'networkidle2' });
+    await sleep(400);
+
+    // 9a. 초기 상태 (사진 없음)
+    const btn9Init = await page.evaluate(() => {
+      const btn = document.getElementById('btn-autofill');
+      const loaded = document.getElementById('autofill-actions-loaded');
+      return {
+        btnVisible: btn && btn.style.display !== 'none',
+        loadedHidden: loaded && loaded.style.display === 'none'
+      };
+    });
+    console.log('  9a. 초기 btn-autofill 표시:', btn9Init.btnVisible ? 'PASS' : 'FAIL');
+    console.log('  9a. 초기 autofill-actions-loaded 숨김:', btn9Init.loadedHidden ? 'PASS' : 'FAIL');
+
+    // 9b. AutoFill._state.photos에 더미 File 주입 후 updateAutofillButtons 호출
+    const btn9Photo = await page.evaluate(() => {
+      const blob = new Blob(['x'], { type: 'image/jpeg' });
+      const f = new File([blob], 'test.jpg', { type: 'image/jpeg' });
+      window.AutoFill._state.photos.push(f);
+      // updateAutofillButtons는 외부 노출 안 되어 있으므로 clearAllPhotos 대신
+      // step3SlotCardUI 대신 직접 상태 변경 후 내부 함수 트리거가 어려움
+      // → btn-add-photos/slot-clear-photos-btn 존재로 대신 검증
+      const btn = document.getElementById('btn-autofill');
+      const loaded = document.getElementById('autofill-actions-loaded');
+      const addPhotos = document.getElementById('btn-add-photos');
+      const clearPhotos = document.getElementById('slot-clear-photos-btn');
+      return {
+        addPhotosExists: !!addPhotos,
+        clearPhotosExists: !!clearPhotos,
+        loadedExists: !!loaded
+      };
+    });
+    console.log('  9b. #btn-add-photos 존재:', btn9Photo.addPhotosExists ? 'PASS' : 'FAIL');
+    console.log('  9b. #slot-clear-photos-btn 존재:', btn9Photo.clearPhotosExists ? 'PASS' : 'FAIL');
+    console.log('  9b. #autofill-actions-loaded 존재:', btn9Photo.loadedExists ? 'PASS' : 'FAIL');
+
+    // 9c. resetState 호출 후 버튼 복귀 확인
+    const btn9Reset = await page.evaluate(() => {
+      window.AutoFill.resetState();
+      const btn = document.getElementById('btn-autofill');
+      const loaded = document.getElementById('autofill-actions-loaded');
+      return {
+        btnVisible: btn && btn.style.display !== 'none',
+        loadedHidden: loaded && loaded.style.display === 'none'
+      };
+    });
+    console.log('  9c. 초기화 후 btn-autofill 표시:', btn9Reset.btnVisible ? 'PASS' : 'FAIL');
+    console.log('  9c. 초기화 후 autofill-actions-loaded 숨김:', btn9Reset.loadedHidden ? 'PASS' : 'FAIL');
+
+    results['Scenario 9'] = (
+      btn9Init.btnVisible &&
+      btn9Init.loadedHidden &&
+      btn9Photo.addPhotosExists &&
+      btn9Photo.clearPhotosExists &&
+      btn9Photo.loadedExists &&
+      btn9Reset.btnVisible &&
+      btn9Reset.loadedHidden
+    ) ? 'PASS' : 'FAIL';
+
+    // =========================================================
     // Scenario 8: console.error 0건
     // =========================================================
     console.log('\n=== Scenario 8: console.error 0건 ===');

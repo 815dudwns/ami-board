@@ -13,6 +13,9 @@
 var Compose = (function () {
   var FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
 
+  // 출력 canvas longerSide 정규화 — 이미지 해상도 무관하게 표/글자 크기 일관화
+  var TARGET_LONGER_SIDE = 2560;
+
   var TABLE_ROWS = [
     { label: '공사명', key: 'projectName' },
     { label: '사업소', key: 'office' },
@@ -58,8 +61,13 @@ var Compose = (function () {
     return loadFonts().then(function () {
       return loadImageBitmap(imageFile);
     }).then(function (bitmap) {
-      var W = bitmap.width || bitmap.naturalWidth;
-      var H = bitmap.height || bitmap.naturalHeight;
+      var imgW = bitmap.width || bitmap.naturalWidth;
+      var imgH = bitmap.height || bitmap.naturalHeight;
+
+      // longerSide를 TARGET_LONGER_SIDE로 정규화 (upscale 포함)
+      var scale = TARGET_LONGER_SIDE / Math.max(imgW, imgH);
+      var W = Math.round(imgW * scale);
+      var H = Math.round(imgH * scale);
 
       var canvas = document.createElement('canvas');
       canvas.width = W;

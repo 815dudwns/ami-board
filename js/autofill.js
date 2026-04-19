@@ -941,7 +941,7 @@
     if (useWebShare) {
       navigator.share({
         files: shareFiles,
-        title: '동산보드판'
+        title: 'Ami-board'
       }).then(function () {
         recordSession();
         // "밴드 열기" 버튼 노출
@@ -964,7 +964,12 @@
       downloadBlobs(reversedItems)
         .then(function () {
           recordSession();
-          openBandApp();
+          // 밴드 열기 버튼 노출 (저장 후 수동으로 열기)
+          var openBandBtnFb = getEl('btn-open-band');
+          if (openBandBtnFb) openBandBtnFb.style.display = 'block';
+          // 초기화 버튼 노출
+          var fullResetBtnFb = getEl('btn-autofill-reset-full');
+          if (fullResetBtnFb) fullResetBtnFb.style.display = 'inline-block';
         })
         .catch(function (err) {
           console.error('save+band error:', err);
@@ -1002,11 +1007,16 @@
     var fullResetBtn = getEl('btn-autofill-reset-full');
     if (fullResetBtn) fullResetBtn.addEventListener('click', function () {
       var workers = window.AppMain ? window.AppMain.getSelectedWorkers() : [];
+      // 자동입히기 상태 리셋
       resetState();
       // slots를 작업원 기준 기본 상태로 재생성
       _state.slots = buildInitialSlots(workers);
       _state.photos = _state.slots.map(function () { return null; });
       _state.thumbUrls = _state.slots.map(function () { return null; });
+      // 폼 필드 리셋 (작업장소, 오전/오후, 날짜)
+      if (window.AppMain && window.AppMain.resetFormFields) {
+        window.AppMain.resetFormFields();
+      }
     });
   }
 

@@ -72,7 +72,7 @@ interface StateV2 {
 | 공사명 | `<select>` from `projectNames` | ✅ | 기본값 = `lastSelected.projectName` |
 | 사업소 | `<select>` — 7개 지사만 (자동 옵션 없음). 작업장소 변경 시 항상 재매핑, 매핑 없으면 현재 값 유지. 수동 선택은 다음 작업장소 변경 시까지만 유지 | ✅ | 구(區) 기반 `office-mapping.js` |
 | 작업장소 | 입력 칸 + GPS 버튼 + 지도 버튼 + 자동 입히기 | ✅ | |
-| 내용 | **토글 버튼 2개** `[오전]` `[오후]`: "작업전안전회의(오전)" / "작업전안전회의(오후)" — 괄호 포함, 한 줄 표시 | ✅ | 기본값 = 현재 시각 기반 자동 (12시 이전=오전). `aria-pressed` 라디오 동작 |
+| 내용 | **토글 버튼 2개** `[오전]` `[오후]`: "작업전안전회의(오전)" / "작업전안전회의(오후)" — 괄호 포함, 한 줄 표시 | ✅ | 기본값 = 현재 시각 기반 자동 (9시 이전=오전, 9시 이후=오후). 라벨 "작업전안전회의(오전/오후)". `aria-pressed` 라디오 동작 |
 | 작업일자 | `<input type="date">` 오늘 자동 YYYY-MM-DD | ✅ | 자정 경과 시 자동 갱신(visibilitychange/focus/pageshow+setInterval). 수동 변경 시 갱신 중지 |
 | 작업원 | 체크박스/칩 from `workers` | ✅ | 기본값 = `lastSelected.workers` |
 
@@ -92,9 +92,12 @@ interface StateV2 {
 
 ### 5.4 "자동 입히기" 통합 플로우 + 완전 초기화 (Phase E/F 개편)
 
-**완전 초기화 버튼 (`#btn-autofill-reset-full`)**: 밴드 열기 버튼 옆에 배치. 탭 시 자동입히기 플로우 완전 리셋:
+**"초기화" 버튼 (`#btn-autofill-reset-full`)**: 저장 완료 후 노출. 탭 시 자동입히기 + 폼 필드 완전 리셋:
 - `_state.active = false`, `photos[]` 비움, `slots[]` 작업원 체크 기준 재생성 (기본 상태), 합성 결과물(`_state.composed`) 폐기
 - 슬롯 UI 숨김, "자동 입히기" 버튼 활성화 상태 복귀, "밴드 열기" 버튼 숨김
+- **작업장소 초기화** (`#field-workplace` value='', `workplaceCoord` clear)
+- **오전/오후 재설정**: 현재 시각 기준 (9시 이전=오전) 다시 적용
+- **날짜 재설정**: 오늘 YYYY-MM-DD, 수동 변경 플래그 리셋
 - confirm() 없이 즉시 실행
 
 ### 5.4b "자동 입히기" 통합 플로우 (Phase E 개편)

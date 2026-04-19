@@ -13,7 +13,7 @@
  */
 
 (function () {
-  var AM_HOUR_BOUNDARY = 12;
+  var AM_HOUR_BOUNDARY = 9;
 
   // 작업일자 수동 변경 감지 플래그 (페이지 새로고침 시 자동 초기화)
   var _userChangedDate = false;
@@ -1044,11 +1044,39 @@
   }
 
   // -------------------------------------------------------
+  // "초기화" 버튼 대응: 폼 필드 리셋 헬퍼
+  //   1. 작업장소 초기화 + workplaceCoord clear
+  //   2. 오전/오후 토글: 현재 시각 기준 재적용
+  //   3. 날짜: 오늘 날짜 재적용 + _userChangedDate 플래그 리셋
+  //   사업소: lastSelected.office 기본값 재적용 (첫 번째 지사)
+  // -------------------------------------------------------
+  function resetFormFields() {
+    // 1. 작업장소 초기화
+    var workplaceEl = document.getElementById('workplace');
+    if (workplaceEl) workplaceEl.value = '';
+    Storage.setLastSelected({ workplace: '', workplaceCoord: null });
+
+    // 2. 오전/오후: 현재 시각 기준 재적용
+    var hour = new Date().getHours();
+    setContentToggle(hour < AM_HOUR_BOUNDARY ? 'am' : 'pm');
+
+    // 3. 날짜: 오늘로 재설정 + 수동 변경 플래그 리셋
+    _userChangedDate = false;
+    var dateEl = document.getElementById('field-date');
+    if (dateEl) dateEl.value = todayISO();
+
+    // 사업소: 매치 배너 닫기 (작업장소 초기화로 매치 무효)
+    var banner = document.getElementById('match-banner');
+    if (banner) banner.style.display = 'none';
+  }
+
+  // -------------------------------------------------------
   // 외부 노출 (Phase C에서 참조할 공개 함수)
   // -------------------------------------------------------
   window.AppMain = {
     getSelectedWorkers: getSelectedWorkers,
     collectBoardData: collectBoardData,
-    triggerMatchCheck: triggerMatchCheck
+    triggerMatchCheck: triggerMatchCheck,
+    resetFormFields: resetFormFields
   };
 })();

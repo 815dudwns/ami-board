@@ -295,11 +295,9 @@
         animation: 150,
         filter: '.slot-remove-btn',
         preventOnFilter: false,
-        forceFallback: true,
+        fallbackOnBody: true,
         fallbackTolerance: 3,
-        touchStartThreshold: 3,
-        delay: 80,
-        delayOnTouchOnly: true,
+        touchStartThreshold: 5,
         onEnd: function (evt) {
           if (evt.oldIndex === evt.newIndex) return;
           // photos만 재정렬 (slots 고정)

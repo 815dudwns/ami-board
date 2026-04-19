@@ -789,7 +789,7 @@ hr {
   cursor: grab;
   user-select: none;
   touch-action: none;
-  transition: border-color 0.15s, transform 0.15s, opacity 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
 }
 .slot-card:active { cursor: grabbing; }
 
@@ -798,7 +798,9 @@ hr {
   opacity: 0.95;
   box-shadow: 0 8px 20px -6px rgba(62,42,29,0.3);
   border-color: var(--accent);
+  transition: none !important;
 }
+.sortable-fallback { transition: none !important; }
 
 .slot-label {
   font-size: 11px;

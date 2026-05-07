@@ -809,8 +809,8 @@ hr {
   color: var(--ink-2);
   text-align: left;
   padding: 0 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   display: flex;
   align-items: center;

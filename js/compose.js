@@ -130,9 +130,7 @@ var Compose = (function () {
     });
     var valueColW = Math.round(maxValueW + padding * 2);
 
-    // 95% 이미지 폭 상한
-    var maxTableW = Math.round(imgW * 0.95);
-    var tableW = Math.min(labelColW + valueColW, maxTableW);
+    var tableW = labelColW + valueColW;
 
     var tableH = rowH * TABLE_ROWS.length;
 
@@ -176,14 +174,8 @@ var Compose = (function () {
         rowY + rowH / 2
       );
 
-      // 값 — 폰트 축소로 셀 너비에 맞춤 (잘림 없음)
-      var maxValW = tableW - labelColW - padding * 2;
-      var fitFontSize = fontSize;
-      ctx.font = fitFontSize + 'px ' + FONT_FAMILY;
-      while (value && ctx.measureText(value).width > maxValW && fitFontSize > 8) {
-        fitFontSize -= 1;
-        ctx.font = fitFontSize + 'px ' + FONT_FAMILY;
-      }
+      // 값
+      ctx.font = fontSize + 'px ' + FONT_FAMILY;
       ctx.fillText(
         value,
         tableX + labelColW + padding,

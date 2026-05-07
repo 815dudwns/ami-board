@@ -809,12 +809,12 @@ hr {
   color: var(--ink-2);
   text-align: left;
   padding: 0 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
+  overflow: visible;
 }
 .slot-label::before {
   content: "⋮⋮";

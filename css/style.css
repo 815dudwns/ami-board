@@ -771,15 +771,15 @@ hr {
 .slot-assign-ui { margin-top: 12px; }
 
 .slot-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
 }
 
 .slot-card {
   position: relative;
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   gap: 6px;
   padding: 6px;
@@ -790,6 +790,7 @@ hr {
   user-select: none;
   touch-action: none;
   transition: border-color 0.15s, opacity 0.15s;
+  min-width: 0;
 }
 .slot-card:active { cursor: grabbing; }
 
@@ -809,12 +810,10 @@ hr {
   color: var(--ink-2);
   text-align: left;
   padding: 0 2px;
-  white-space: normal;
-  word-break: break-all;
+  white-space: nowrap;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
-  overflow: visible;
 }
 .slot-label::before {
   content: "⋮⋮";

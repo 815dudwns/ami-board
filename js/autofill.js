@@ -334,17 +334,29 @@
         workers.slice().sort()
       );
 
+      // 지도/수동으로 이미 입력된 주소가 있으면 GPS 덮어쓰기 금지
+      var workplaceEl = getEl('workplace');
+      var hasWorkplace = workplaceEl && workplaceEl.value.trim() !== '';
+
       if (matched) {
         var officeEl = getEl('field-office');
         if (officeEl) officeEl.value = matched.office || '';
-        getEl('workplace').value = matched.workplace || '';
+        if (!hasWorkplace) {
+          workplaceEl.value = matched.workplace || '';
+        }
         Storage.setLastSelected({
           office: matched.office || '',
-          workplace: matched.workplace || '',
+          workplace: hasWorkplace ? workplaceEl.value : (matched.workplace || ''),
           workplaceCoord: matched.workplaceCoord || null
         });
         var banner = getEl('match-banner');
         if (banner) banner.style.display = 'flex';
+        resolve();
+        return;
+      }
+
+      // 주소 이미 있으면 GPS 건너뜀
+      if (hasWorkplace) {
         resolve();
         return;
       }
@@ -361,7 +373,7 @@
           var lng = pos.coords.longitude;
           reverseGeocodeForAutofill(lat, lng, function (address) {
             if (address) {
-              getEl('workplace').value = address;
+              workplaceEl.value = address;
               Storage.setLastSelected({ workplace: address });
             } else {
               alert('GPS 주소 변환에 실패했습니다. 작업장소를 수동 입력하세요.');

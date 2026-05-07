@@ -176,12 +176,16 @@ var Compose = (function () {
         rowY + rowH / 2
       );
 
-      // 값 (상한 초과 시 truncate)
-      ctx.font = fontSize + 'px ' + FONT_FAMILY;
+      // 값 — 폰트 축소로 셀 너비에 맞춤 (잘림 없음)
       var maxValW = tableW - labelColW - padding * 2;
-      var displayVal = truncateText(ctx, value, maxValW);
+      var fitFontSize = fontSize;
+      ctx.font = fitFontSize + 'px ' + FONT_FAMILY;
+      while (value && ctx.measureText(value).width > maxValW && fitFontSize > 8) {
+        fitFontSize -= 1;
+        ctx.font = fitFontSize + 'px ' + FONT_FAMILY;
+      }
       ctx.fillText(
-        displayVal,
+        value,
         tableX + labelColW + padding,
         rowY + rowH / 2
       );

@@ -462,7 +462,12 @@
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(function (pos) {
         var center = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-        _mapState.map.setCenter(center);
+        _mapState.map.setCenter(center);  // 최초 1회만 (이후 지도 자유 이동)
+        // 내 위치 마커(파란 점) 표시
+        var dot = document.createElement('div');
+        dot.style.cssText = 'width:14px;height:14px;background:#3b82f6;border:2px solid white;border-radius:50%;box-shadow:0 0 0 4px rgba(59,130,246,0.25);';
+        var locDot = new kakao.maps.CustomOverlay({ position: center, content: dot, zIndex: 10 });
+        locDot.setMap(_mapState.map);
       }, function () { /* 실패 시 서울 시청 기본값 유지 */ }, { timeout: 5000 });
     }
 
